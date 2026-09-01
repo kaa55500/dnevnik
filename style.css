@@ -1376,3 +1376,7 @@ h2.wk-now { color: var(--accent); }
 /* Строка записи, которая правится по тапу. */
 button.rec-fact { width: 100%; background: none; border: 0; text-align: left; font: inherit; }
 button.rec-fact.tap .rec-fact-label { color: var(--accent); }
+
+/* Активность вне плана — свёрнутая карточка внизу дня. */
+.add-extra summary { color: var(--muted); font-size: var(--t-sm); }
+.add-extra .group-card { margin-top: 10px; }

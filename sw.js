@@ -1,5 +1,5 @@
 // VERSION и ASSETS генерируются: node tools/build-sw.mjs. Руками не править.
-const VERSION = 'v4489f5bec94b';
+const VERSION = 'vd058315e3ad6';
 const ASSETS = [
   '.',
   'analytics.js',

@@ -126,3 +126,38 @@ export function requiredPairs(workout) {
     .map((e, i) => ({ e, p: (workout.prescription || [])[i] || {}, i }))
     .filter((x) => !x.p.optional && !x.p.unplanned && !x.e.unplanned);
 }
+
+/** Подписи видов активности — общие для экранов дня и тренировки. */
+export const KIND_TITLE = {
+  gym: 'Силовая',
+  skill: 'Навыки',
+  home: 'Домашняя',
+  cardio: 'Кардио',
+};
+
+/**
+ * Пустая сессия вне плана. Побегал в субботу, размялся в выходной, доделал
+ * навыки — записать это было некуда: экран упирался в «на эту дату сессии
+ * в плане нет», и активность не попадала в журнал вообще.
+ */
+export function makeUnplannedWorkout(date, kind, week, todayIso) {
+  return {
+    date,
+    kind,
+    status: 'draft',
+    weekN: week ? week.n : null,
+    weekKind: week ? (week.kind || 'work') : 'work',
+    dayCode: KIND_TITLE[kind] || kind,
+    title: `${KIND_TITLE[kind] || kind} вне плана`,
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    backdated: date !== todayIso,
+    movedFrom: null,
+    unplannedSession: true,
+    plannedRPE: null,
+    avgRPE: null,
+    chestSignal: null,
+    prescription: [],
+    exercises: [],
+  };
+}

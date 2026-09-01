@@ -1,11 +1,12 @@
 import {
-  getDay, putDay, getWeek, putWeek, getPlan, getSettings, listWorkouts, listDays, listWeeks,
+  getDay, putDay, getWeek, putWeek, getPlan, getSettings, listWorkouts, putWorkout, listDays, listWeeks,
 } from '../store.js';
-import { sessionsFor, sessionDates, planRange } from '../plan.js';
+import { sessionsFor, weekOf, sessionDates, planRange } from '../plan.js';
 import { plannedSeconds } from './stretch-block.js';
 import { todayISO, weekdayShort, isoWeek, addDays } from '../lib/dates.js';
 import { parseNum } from '../lib/format.js';
 import { pendingTasks, closedTasks, debts, skipKeyOf, skipScopeOf } from './day-logic.js';
+import { makeUnplannedWorkout, KIND_TITLE } from './workout-logic.js';
 import { dayRecord } from './journal-logic.js';
 import { renderRecord } from './record-view.js';
 import { navigate } from '../main.js';
@@ -360,6 +361,37 @@ export async function render(box, params = {}) {
     }
     box.append(card);
   }
+
+  // Активность вне плана. Побегал в субботу, размялся в выходной, доделал
+  // навыки — записать это было некуда: экран упирался в «сессии в плане нет».
+  const extra = el('details', { className: 'card add-extra' });
+  extra.append(el('summary', { textContent: '+ активность вне плана' }));
+  const kinds = el('div', { className: 'group-card' });
+  for (const kind of ['gym', 'skill', 'home', 'cardio']) {
+    kinds.append(el('button', {
+      className: 'group-row',
+      onclick: async () => {
+        try {
+          const w = makeUnplannedWorkout(date, kind, weekOf(plan, date), today);
+          w.id = await putWorkout(w);
+          navigate('workout', { date, kind, code: w.dayCode });
+        } catch (err) {
+          errorLine(box, err);
+        }
+      },
+    },
+    el('span', { className: 'row-title', textContent: KIND_TITLE[kind] }),
+    el('span', { className: 'chev' })));
+  }
+  kinds.append(el('button', {
+    className: 'group-row',
+    onclick: () => navigate('stretch', { date }),
+  },
+  el('span', { className: 'row-title', textContent: 'Растяжка' }),
+  el('span', { className: 'row-value', textContent: 'блок цикла' }),
+  el('span', { className: 'chev' })));
+  extra.append(kinds);
+  box.append(extra);
 
   // Закрытая строка не исчезает насовсем: форма складывается сюда, иначе
   // ошибку в утреннем весе уже никак не поправить (находка #4).

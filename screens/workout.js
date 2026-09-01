@@ -451,12 +451,21 @@ async function drawOverview(box) {
       `Хвостом сессии — растяжка, ${state.stretch.positions.length} позиций.` }));
   }
 
+  if (workout.fillMode) {
+    box.append(el('button', {
+      className: 'go',
+      textContent: 'продолжить заполнение →',
+      onclick: () => { state.showOverview = false; return draw(box); },
+    }));
+  }
+
   box.append(el('div', { className: 'group-cap', textContent: 'как заполняешь' }));
   const card = el('div', { className: 'group-card' });
   const pick = (title, hint, mode) => el('button', {
     className: 'group-row',
     onclick: async () => {
       workout.fillMode = mode;
+      state.showOverview = false;
       if (!(await save(box))) return;
       // Дату могли сменить прямо здесь — тогда экран открывается заново
       // на новой дате, иначе адрес и запись разъедутся.
@@ -588,8 +597,11 @@ async function draw(box) {
   box.innerHTML = '';
   if (!state) return;
 
-  // Режим ещё не выбран — сначала обзор. Закрытую сессию не переспрашиваем.
-  if (state.workout.fillMode == null && state.workout.status !== 'done') {
+  // Обзор: до выбора режима — сам собой, дальше — по кнопке «к плану сессии».
+  // Посмотреть весь план посреди тренировки нужно постоянно, а единственным
+  // входом туда был чип режима, который заодно сбрасывал сам режим.
+  if (state.showOverview
+      || (state.workout.fillMode == null && state.workout.status !== 'done')) {
     await drawOverview(box);
     return;
   }
@@ -598,6 +610,48 @@ async function draw(box) {
   box.dataset.day = workout.dayCode;
   const extras = state.extras || [];
   const total = workout.exercises.length + extras.length;
+
+  // Сессия вне плана начинается пустой: её содержание — то, что реально
+  // сделал. Побегал в субботу, доделал навыки — записать это было некуда.
+  if (!workout.exercises.length) {
+    const dd = workout.date;
+    box.append(el('div', { className: 'wk-head' },
+      el('div', {
+        className: 'wk-crumbs',
+        textContent: `${weekdayShort(dd)} ${dd.slice(8)}.${dd.slice(5, 7)}`
+          + (workout.weekN ? ` · Н${workout.weekN}` : '')
+          + ' · вне плана',
+      }),
+      el('h2', { textContent: workout.title || 'Вне плана' })));
+
+    box.append(el('p', {
+      className: 'hint',
+      textContent: 'Пока пусто. Добавь упражнение — оно и станет содержанием этой сессии.',
+    }));
+    box.append(el('button', {
+      className: 'go', textContent: '+ упражнение',
+      onclick: () => { state.insertAt = 0; return draw(box); },
+    }));
+    if (state.insertAt != null) box.append(exercisePicker(box));
+
+    box.append(el('button', {
+      className: 'back', textContent: '← другая сессия',
+      onclick: () => { stopTimer(); state = null; navigate('workout', {}); },
+    }));
+    box.append(el('button', {
+      className: 'back danger', textContent: 'отменить заполнение',
+      onclick: async () => {
+        if (!confirm('Удалить пустую сессию?')) return;
+        stopTimer();
+        if (workout.id != null) {
+          try { await delWorkout(workout.id); } catch { /* остаётся как есть */ }
+        }
+        state = null;
+        navigate('workout', {});
+      },
+    }));
+    return;
+  }
 
   // Хвост сессии рисуется своей веткой: у него нет ни плана подходов,
   // ни истории, ни таймера отдыха — общий вид упражнения тут только мешал бы.
@@ -1085,6 +1139,11 @@ async function draw(box) {
   }
 
   box.append(el('button', {
+    className: 'back', textContent: '← весь план сессии и дата',
+    onclick: () => { stopTimer(); state.showOverview = true; return draw(box); },
+  }));
+
+  box.append(el('button', {
     className: 'back', textContent: '← другая сессия',
     onclick: () => { stopTimer(); state = null; navigate('workout', {}); },
   }));
@@ -1333,7 +1392,7 @@ export async function render(box, params = {}) {
     const week = weekRaw || { id: isoWeek(date) };
 
     state = {
-      workout, index: 0, timer: null, restLeft: 0, paramDate: date,
+      workout, index: 0, timer: null, restLeft: 0, paramDate: date, showOverview: false,
       warmup: false, lastSetAt: null, guide, showPlan: false,
       editSet: null, insertAt: null,
       stretch, bonus, day, week,

@@ -1,7 +1,7 @@
 import {
   getDay, putDay, getWeek, putWeek, getPlan, listWorkouts, getExercises,
 } from '../store.js';
-import { sessionFor } from '../plan.js';
+import { sessionFor, anyMobility } from '../plan.js';
 import { todayISO, isoWeek, weekdayShort } from '../lib/dates.js';
 import { parseNum } from '../lib/format.js';
 import { el } from './day.js';
@@ -16,18 +16,28 @@ export async function render(box, params = {}) {
   const guide = new Map(exercises.map((e) => [e.name, e]));
   const day = dayRaw || { date };
   const week = weekRaw || { id: isoWeek(date) };
-  const hit = sessionFor(plan, date, 'mobility');
+  const planned = sessionFor(plan, date, 'mobility');
+  // Дня вне плана в цикле нет, а растяжку в этот день делают. Берём блок
+  // цикла как есть: состав у него один и тот же во всех днях.
+  const fallback = planned ? null : anyMobility(plan);
+  const hit = planned || (fallback ? { session: fallback } : null);
 
   box.append(el('h1', {
     textContent: `Растяжка · ${weekdayShort(date)} ${date.slice(8)}.${date.slice(5, 7)}`,
   }));
 
   if (!hit) {
-    box.append(el('p', { textContent: 'В этот день блока растяжки в плане нет.' }));
+    box.append(el('p', { textContent: 'Плана на эту дату нет — блок растяжки взять неоткуда.' }));
     return;
   }
 
   const session = hit.session;
+  if (fallback) {
+    box.append(el('p', {
+      className: 'hint',
+      textContent: 'День вне плана — блок взят из цикла. Отметки лягут в этот день.',
+    }));
+  }
   const homeDone = workouts.some(
     (w) => w.date === date && w.kind === 'home' && w.status === 'done');
   const marks = { ...(day.stretch || {}) };

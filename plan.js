@@ -1,3 +1,5 @@
+import { isoWeek } from './lib/dates.js';
+
 const SCHEMA = 2;
 
 export const PHASES = ['deficit', 'bulk', 'cut'];
@@ -149,6 +151,35 @@ export function sessionFor(plan, iso, kind, code = null) {
   const s = (code && list.find((x) => x.kind === kind && x.code === code))
     || list.find((x) => x.kind === kind);
   return s ? { week: hit.week, day: hit.day, session: s } : null;
+}
+
+/**
+ * Неделя цикла, в которую попадает дата, — даже если самого дня в плане нет.
+ * Суббота без тренировки в план не входит, а неделя у неё та же.
+ */
+export function weekOf(plan, iso) {
+  const mine = isoWeek(iso);
+  for (const week of (plan && plan.weeks) || []) {
+    // Сравниваем календарные недели, а не диапазон плановых дней: Н3 идёт
+    // с понедельника по субботу, и воскресенье осталось бы без недели.
+    if ((week.days || []).some((d) => isoWeek(d.date) === mine)) return week;
+  }
+  return null;
+}
+
+/**
+ * Блок растяжки цикла — любой, первый попавшийся. Нужен для дней вне плана:
+ * растяжку делают и в субботу, а плановых дней у выходных нет, и записать
+ * её было некуда. Состав блока в цикле одинаковый, подменять нечего.
+ */
+export function anyMobility(plan) {
+  for (const week of (plan && plan.weeks) || []) {
+    for (const day of week.days || []) {
+      const s = (day.sessions || []).find((x) => x.kind === 'mobility');
+      if (s) return s;
+    }
+  }
+  return null;
 }
 
 /** Все сессии дня в порядке плана. */
