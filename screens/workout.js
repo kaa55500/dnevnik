@@ -1137,20 +1137,29 @@ async function chooser(box, iso) {
     return;
   }
 
-  const statusOf = (s) => {
-    const w = workouts.find((x) => x.date === s.date && (x.kind || 'gym') === s.kind);
-    return w ? w.status : null;
+  // Тренировка ищется и по плановой дате: перенесённая остаётся на своём
+  // месте в календаре, а не пропадает из списка. Точное совпадение даты
+  // главнее переноса — иначе чужая запись перехватила бы чужой слот.
+  const workoutFor = (s) => {
+    const mine = workouts.filter((x) => (x.kind || 'gym') === s.kind);
+    return mine.find((x) => x.date === s.date)
+      || mine.find((x) => x.movedFrom === s.date)
+      || null;
   };
 
   const dm = (d) => `${d.slice(8)}.${d.slice(5, 7)}`;
 
   const row = (s) => {
-    const status = statusOf(s);
-    const mark = status === 'done' ? ' · записана' : (status === 'draft' ? ' · черновик' : '');
+    const w = workoutFor(s);
+    const status = w ? w.status : null;
+    const moved = w && w.date !== s.date ? w.date : null;
+    const mark = (status === 'done' ? ' · записана' : (status === 'draft' ? ' · черновик' : ''))
+      + (moved ? ` · сделана ${dm(moved)}` : '');
     const tone = s.date === iso ? ' now' : (s.date > iso ? ' future' : '');
     const b = el('button', {
-      className: 'pick' + tone + (status === 'done' ? ' done' : ''),
-      onclick: () => navigate('workout', { date: s.date, kind: s.kind }),
+      className: 'pick' + tone + (status === 'done' ? ' done' : '') + (moved ? ' moved' : ''),
+      // Открывается там, где тренировка лежит на самом деле.
+      onclick: () => navigate('workout', { date: w ? w.date : s.date, kind: s.kind }),
     });
     b.append(
       el('span', {

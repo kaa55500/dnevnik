@@ -1345,3 +1345,6 @@ h2.wk-now { color: var(--accent); }
 
 /* Сессия, уехавшая с этой даты на другую. */
 .card.moved .group-row { padding-left: 0; padding-right: 0; }
+
+/* Перенесённая сессия стоит на плановом месте, но помечена. */
+.pick.moved .pick-name { color: var(--warn); }
