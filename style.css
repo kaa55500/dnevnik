@@ -1,0 +1,1236 @@
+/* Тренировочный дневник — оформление.
+   Язык взят у интервального таймера: чёрный фон, крупные тонкие цифры,
+   оранжевый акцент, круглые кнопки действия, тёмные карточки-списки
+   с волосяными разделителями. Тема одна — тёмная: приложение открывается
+   в зале, где светлый экран бьёт по глазам, и переключаться незачем. */
+
+:root {
+  --bg: #000000;
+  --card: #1c1c1e;
+  --card-2: #2c2c2e;
+  --line: #38383a;
+  --ink: #ffffff;
+  --muted: #98989e;
+  --accent: #ff9f0a;
+  --accent-soft: rgba(255, 159, 10, 0.16);
+  --warn: #ffd60a;
+  --warn-soft: rgba(255, 214, 10, 0.14);
+  --bad: #ff453a;
+  --bad-soft: rgba(255, 69, 58, 0.16);
+  --good: #30d158;
+  --good-soft: rgba(48, 209, 88, 0.16);
+
+  --sans: -apple-system, system-ui, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+
+  --t-xs: 12px;
+  --t-sm: 14px;
+  --t-md: 17px;
+  --t-lg: 22px;
+  --t-xl: 34px;
+  --t-huge: clamp(64px, 23vw, 108px);
+
+  --gap: 14px;
+  --radius: 14px;
+  --tap: 48px;
+  --nav-h: 60px;
+}
+
+/* Цвет дня — акцент меняется вместе с типом сессии, как раунды в таймере. */
+[data-day="В1"] { --accent: #ff9f0a; --accent-soft: rgba(255, 159, 10, 0.16); }
+[data-day="В2"] { --accent: #30d158; --accent-soft: rgba(48, 209, 88, 0.16); }
+[data-day="Н1"] { --accent: #0a84ff; --accent-soft: rgba(10, 132, 255, 0.16); }
+[data-day="Дом"] { --accent: #bf5af2; --accent-soft: rgba(191, 90, 242, 0.16); }
+[data-day="Бег"] { --accent: #64d2ff; --accent-soft: rgba(100, 210, 255, 0.16); }
+[data-day="Навык А"] { --accent: #bf5af2; --accent-soft: rgba(191, 90, 242, 0.16); }
+[data-day="Навык Б"] { --accent: #ff375f; --accent-soft: rgba(255, 55, 95, 0.16); }
+
+* { box-sizing: border-box; }
+
+html { background: var(--bg); }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: var(--t-md)/1.45 var(--sans);
+  -webkit-text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+}
+
+#screen {
+  padding: max(12px, env(safe-area-inset-top)) 16px calc(var(--nav-h) + 28px);
+  max-width: 640px;
+  margin: 0 auto;
+  min-height: 100vh;
+}
+
+h1 {
+  margin: 4px 0 16px;
+  font-size: var(--t-lg);
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+h2 {
+  margin: 22px 0 8px;
+  font-size: var(--t-xs);
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+h3 {
+  margin: 16px 0 6px;
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+p { margin: 8px 0; }
+
+.hint { font-size: var(--t-sm); color: var(--muted); }
+
+.error {
+  background: var(--bad-soft);
+  color: var(--bad);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  font-size: var(--t-sm);
+}
+
+.banner {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin: 12px 0;
+  font-size: var(--t-sm);
+}
+
+.done-all {
+  color: var(--muted);
+  text-align: center;
+  padding: 32px 0;
+}
+
+/* ---------- Нижняя навигация ---------- */
+#tabs {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  height: calc(var(--nav-h) + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  display: flex;
+  background: rgba(20, 20, 22, 0.94);
+  backdrop-filter: saturate(180%) blur(20px);
+  border-top: 1px solid var(--line);
+  z-index: 5;
+}
+
+#tabs button {
+  flex: 1;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font: 500 var(--t-xs)/1 var(--sans);
+}
+
+#tabs button.active { color: var(--accent); }
+
+/* ---------- Карточки и формы ---------- */
+.card {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 12px;
+}
+
+.card h2 { margin-top: 0; }
+.card.req { box-shadow: inset 3px 0 0 var(--accent); }
+.done-card { box-shadow: inset 3px 0 0 var(--good); }
+
+/* Закрытые строки дня: форма остаётся доступной, но не мозолит глаза. */
+.edit-closed { padding: 0; }
+.edit-closed > summary {
+  padding: 14px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: var(--t-sm);
+  list-style: none;
+}
+.edit-closed > summary::-webkit-details-marker { display: none; }
+.edit-closed > summary::after { content: ' ⌄'; }
+.edit-closed[open] > summary::after { content: ' ⌃'; }
+.edit-closed .card { margin: 0 10px 10px; background: var(--bg); }
+
+.boot-error {
+  background: var(--bad-soft);
+  color: var(--bad);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  font-size: var(--t-sm);
+}
+
+.grid {
+  display: grid;
+  gap: 10px;
+}
+
+label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--t-sm);
+  color: var(--muted);
+}
+
+label > input[type="number"],
+label > input[type="text"] { margin-left: auto; }
+
+input[type="number"],
+input[type="text"],
+select {
+  min-height: var(--tap);
+  min-width: 96px;
+  padding: 0 12px;
+  background: var(--card-2);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--ink);
+  font: 600 var(--t-lg) var(--mono);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  appearance: none;
+}
+
+input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+input[type="checkbox"] {
+  width: 26px; height: 26px;
+  accent-color: var(--accent);
+  flex: 0 0 auto;
+}
+
+label.check { color: var(--ink); }
+
+input[type="file"] { font-size: var(--t-sm); color: var(--muted); }
+
+button {
+  font: 600 var(--t-md) var(--sans);
+  color: var(--ink);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.save, .go {
+  display: block;
+  width: 100%;
+  min-height: var(--tap);
+  margin-top: 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #000;
+  font-weight: 700;
+}
+
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.row button {
+  flex: 1;
+  min-height: var(--tap);
+  background: var(--card-2);
+  border: 0;
+  border-radius: 999px;
+  color: var(--ink);
+  font-size: var(--t-sm);
+}
+
+.back, .today-link, .link, .plan-toggle, .add-weight, .goal-edit {
+  background: none;
+  border: 0;
+  color: var(--accent);
+  font-size: var(--t-sm);
+  font-weight: 500;
+  padding: 10px 0;
+}
+
+/* ---------- Шапка дня ---------- */
+.day-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.day-head .nav-arrow {
+  flex: 0 0 auto;
+  width: var(--tap); height: var(--tap);
+  background: none;
+  border: 0;
+  color: var(--accent);
+  font-size: var(--t-lg);
+}
+
+.day-head .nav-arrow[disabled] { opacity: 0.3; }
+
+.day-title {
+  flex: 1;
+  height: var(--tap);
+  background: none;
+  border: 0;
+  color: var(--ink);
+  font: 700 var(--t-lg)/1 var(--sans);
+  letter-spacing: -0.3px;
+}
+
+.day-links { display: flex; gap: 18px; margin-bottom: 12px; }
+
+.badge-back {
+  background: var(--warn-soft);
+  color: var(--warn);
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: var(--t-xs);
+  display: inline-block;
+  margin-bottom: 8px;
+}
+
+/* ---------- Долги ---------- */
+.debts .debt-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--line);
+  padding: 12px 0;
+  color: var(--ink);
+  font-size: var(--t-sm);
+  font-weight: 500;
+}
+
+/* ---------- Кардио ---------- */
+.cardio-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  padding: 10px 0;
+  font-size: var(--t-sm);
+}
+
+.cardio-form { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.cardio-form input { min-width: 0; flex: 1 1 72px; font-size: var(--t-md); }
+.cardio-form select { flex: 1 1 120px; text-align: left; font-size: var(--t-md); }
+
+.cardio-form .add, .cardio-row .del {
+  min-width: var(--tap);
+  min-height: var(--tap);
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 0;
+  border-radius: 999px;
+  font-size: var(--t-lg);
+}
+
+/* ---------- Тренировка ---------- */
+.wk-head { text-align: center; margin-bottom: 8px; }
+
+.wk-crumbs {
+  font: 600 var(--t-xs) var(--sans);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.wk-head h2 {
+  margin: 6px 0 4px;
+  font-size: var(--t-lg);
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  color: var(--ink);
+  text-transform: none;
+}
+
+.wk-plan, .wk-prev {
+  font: 500 var(--t-sm) var(--mono);
+  color: var(--muted);
+}
+
+.wk-control {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: var(--t-xs);
+  font-weight: 600;
+}
+
+.wk-note {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 12px;
+  font-size: var(--t-sm);
+  margin-bottom: 12px;
+}
+
+/* Записанные подходы: полоса = доля от самого тяжёлого в упражнении. */
+ol.wk-sets { list-style: none; padding: 0; margin: 14px 0; }
+
+ol.wk-sets li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 20px 1fr var(--tap);
+  align-items: center;
+  gap: 10px;
+  padding: 4px 4px 4px 12px;
+  min-height: var(--tap);
+  border-radius: 10px;
+  margin-bottom: 6px;
+  background: var(--card);
+  font: 500 var(--t-sm) var(--mono);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+}
+
+.set-n { position: relative; color: var(--muted); }
+.set-body { position: relative; overflow-wrap: anywhere; }
+
+.set-del {
+  position: relative;
+  width: var(--tap); height: var(--tap);
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font-size: var(--t-lg);
+  line-height: 1;
+}
+
+.set-del:active { color: var(--bad); }
+
+ol.wk-sets li::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: calc(var(--load, 1) * 100%);
+  background: var(--accent-soft);
+}
+
+ol.wk-sets li > span { position: relative; }
+ol.wk-sets li.warm { opacity: 0.5; }
+
+.wk-form { display: grid; gap: 10px; margin: 14px 0 10px; }
+
+.wk-form label {
+  display: grid;
+  grid-template-columns: 52px var(--tap) 1fr var(--tap);
+  align-items: center;
+  gap: 8px;
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+
+.wk-form input {
+  width: 100%;
+  min-width: 0;
+  font-size: var(--t-xl);
+  font-weight: 300;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+}
+
+.step {
+  width: var(--tap); height: var(--tap);
+  border: 0;
+  border-radius: 999px;
+  background: var(--card-2);
+  color: var(--accent);
+  font: 600 var(--t-md) var(--mono);
+}
+
+.machine-hint {
+  font-size: var(--t-xs);
+  color: var(--muted);
+  background: var(--card);
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin: 0 0 10px;
+}
+
+.wk-actions { display: flex; gap: 10px; align-items: stretch; margin-top: 4px; }
+
+.warm-toggle {
+  flex: 0 0 auto;
+  padding: 0 16px;
+  min-height: 56px;
+  background: var(--card-2);
+  border: 0;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+
+.warm-toggle.on { background: var(--warn-soft); color: var(--warn); }
+
+.wk-add {
+  flex: 1;
+  min-height: 56px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #000;
+  font: 700 var(--t-md) var(--sans);
+  letter-spacing: 0.2px;
+}
+
+/* Таймер отдыха — герой экрана, как в таймере: крупные тонкие цифры. */
+.wk-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.wk-nav button {
+  min-width: var(--tap); min-height: var(--tap);
+  background: var(--card-2);
+  border: 0;
+  border-radius: 999px;
+  color: var(--ink);
+  font-size: var(--t-sm);
+}
+
+.wk-nav button[disabled] { opacity: 0.3; }
+
+.wk-rest {
+  flex: 1;
+  text-align: center;
+  font: 200 var(--t-huge)/1 var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -2px;
+  color: var(--ink);
+}
+
+.wk-rest:empty { display: none; }
+.wk-rest.over { color: var(--good); }
+
+.wk-finish {
+  display: block;
+  width: 100%;
+  min-height: var(--tap);
+  margin-top: 14px;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font: 600 var(--t-sm) var(--sans);
+}
+
+.skipped { color: var(--muted); }
+
+/* ---------- Правая грудь ---------- */
+.chest { margin: 18px 0; }
+.chest-row { display: flex; gap: 10px; }
+
+.chest-btn {
+  flex: 1;
+  height: 64px;
+  background: var(--card-2);
+  border: 0;
+  border-radius: 999px;
+  color: var(--ink);
+  font: 300 var(--t-xl) var(--mono);
+}
+
+.chest-btn.on { background: var(--accent); color: #000; font-weight: 600; }
+
+/* ---------- Выбор сессии ---------- */
+.pick {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 2px 12px;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  background: var(--card);
+  border: 0;
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 8px;
+  color: var(--ink);
+  min-height: var(--tap);
+}
+
+.pick.now { box-shadow: inset 0 0 0 2px var(--accent); }
+.pick.future { opacity: 0.65; }
+.pick.done { opacity: 0.5; }
+
+.pick-date {
+  font: 600 var(--t-sm) var(--mono);
+  color: var(--accent);
+  grid-row: 1 / 3;
+}
+
+.pick-name { font-size: var(--t-md); font-weight: 600; }
+.pick-count { font: 500 var(--t-xs) var(--mono); color: var(--muted); grid-row: 1 / 3; }
+
+/* ---------- План сессии ---------- */
+ol.plan-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 14px;
+  background: var(--card);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+ol.plan-list li + li { border-top: 1px solid var(--line); }
+
+.plan-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 12px 14px;
+  color: var(--ink);
+  min-height: var(--tap);
+}
+
+.plan-name { font-size: var(--t-sm); font-weight: 600; }
+.plan-dose { grid-column: 1; font: 500 var(--t-xs) var(--mono); color: var(--muted); }
+.plan-mark { grid-row: 1 / 3; align-self: center; font: 600 var(--t-xs) var(--mono); color: var(--good); }
+ol.plan-list li.now { background: var(--accent-soft); }
+ol.plan-list li.now .plan-name { color: var(--accent); }
+ol.plan-list li.done { opacity: 0.5; }
+
+/* ---------- Растяжка ---------- */
+ol.stretch {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  background: var(--card);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+ol.stretch li { padding: 14px; }
+ol.stretch li + li { border-top: 1px solid var(--line); }
+
+ol.stretch .check {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  gap: 4px 12px;
+  align-items: start;
+}
+
+.pos-name { font-weight: 600; color: var(--ink); }
+.pos-dose { grid-column: 2; font: 500 var(--t-sm) var(--mono); color: var(--accent); }
+.pos-what { grid-column: 2; font-size: var(--t-xs); color: var(--muted); }
+.split-measure { margin-top: 18px; }
+
+/* ---------- Календарь ---------- */
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-dow { text-align: center; font-size: var(--t-xs); color: var(--muted); padding-bottom: 6px; }
+
+.cal-cell {
+  aspect-ratio: 1;
+  background: var(--card);
+  border: 0;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--ink);
+}
+
+.cal-cell.empty { background: none; }
+.cal-cell.off { opacity: 0.35; }
+.cal-cell.today { box-shadow: inset 0 0 0 2px var(--accent); }
+.cal-cell.hole { background: var(--bad-soft); }
+.cal-num { font: 500 var(--t-sm) var(--mono); }
+.cal-dots { display: flex; gap: 3px; height: 6px; }
+
+.dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+.dot.w { background: var(--accent); }
+.dot.d { background: var(--warn); }
+.dot.b { background: var(--good); }
+.dot.e { background: var(--muted); }
+
+.cal-legend {
+  display: flex; flex-wrap: wrap; gap: 12px;
+  margin-top: 16px;
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+
+.cal-legend span { display: flex; align-items: center; gap: 5px; }
+
+/* ---------- Запись дня: журнал и «Сделано» ---------- */
+.jrec-head {
+  display: flex; align-items: baseline; gap: 10px;
+  width: 100%; text-align: left;
+  background: none; border: 0;
+  color: var(--ink);
+  font: 700 var(--t-md) var(--sans);
+  padding: 0 0 4px;
+}
+
+.jrec-date { flex: 1; }
+
+.jrec-figure {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.rec { display: flex; flex-direction: column; gap: 4px; }
+
+/* Подпись раздела: серым вразрядку, как над группами меню. */
+.rec-cap {
+  display: flex; align-items: baseline; gap: 8px;
+  margin: 14px 0 6px;
+  font-size: var(--t-xs);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.rec-cap:first-child { margin-top: 8px; }
+.rec-cap-note { margin-left: auto; text-transform: none; letter-spacing: 0; }
+.rec-cap.tap { color: var(--accent); cursor: pointer; }
+
+/* Факты одной колонкой: подпись слева, число справа. */
+.rec-facts { display: flex; flex-direction: column; }
+
+.rec-fact {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 3px 0;
+  font-size: var(--t-sm);
+}
+
+.rec-fact-label { color: var(--muted); }
+
+.rec-fact-value {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.rec-fact.alert .rec-fact-value { color: var(--bad); }
+
+/* Таблица упражнений: три числовые колонки фиксированной ширины,
+   название забирает остаток и обрезается многоточием — строка не переносится. */
+.rec-table { display: flex; flex-direction: column; }
+
+.rec-th, .rec-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 58px 62px 38px;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 0;
+}
+
+.rec-th {
+  font-size: var(--t-xs);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding-bottom: 2px;
+}
+
+.rec-th span:not(:first-child) { text-align: right; }
+
+.rec-name {
+  font-size: var(--t-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rec-swap {
+  padding: 0 0 4px 8px;
+  border-left: 2px solid var(--line);
+  color: var(--muted);
+  font-size: var(--t-xs);
+}
+
+.rec-num {
+  text-align: right;
+  font-size: var(--t-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.rec-num.rpe { color: var(--muted); }
+
+.rec-mark {
+  grid-column: 2 / -1;
+  text-align: right;
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+
+.rec-cardio {
+  grid-column: 2 / -1;
+  text-align: right;
+  font-size: var(--t-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.rec-row.skip { grid-template-columns: minmax(0, 1fr) auto; }
+
+.rec-skip {
+  font-size: var(--t-xs);
+  color: var(--muted);
+  text-align: right;
+}
+
+.rec-note {
+  font-size: var(--t-xs);
+  color: var(--muted);
+  border-left: 2px solid var(--line);
+  padding: 2px 0 4px 8px;
+  margin: 2px 0 6px;
+}
+
+.rec-note > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.rec-note > summary::-webkit-details-marker { display: none; }
+.rec-note[open] > summary { display: none; }
+.rec-note-full { white-space: pre-wrap; }
+
+/* Позиции растяжки — чипами: их шесть, и списком они занимают полэкрана. */
+.rec-stretch { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.rec-chip {
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: var(--bg);
+  font-size: var(--t-xs);
+  color: var(--ink);
+}
+
+.done-card .rec-chip { background: rgba(255, 255, 255, 0.06); }
+
+/* ---------- Динамика ---------- */
+.tabs2 {
+  display: flex;
+  gap: 4px;
+  background: var(--card);
+  border-radius: 999px;
+  padding: 4px;
+  margin-bottom: 16px;
+}
+
+.tabs2 button {
+  flex: 1;
+  min-height: 38px;
+  background: none;
+  border: 0;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+
+.tabs2 button.active { background: var(--accent); color: #000; font-weight: 700; }
+
+.phase { font-size: var(--t-sm); color: var(--accent); font-weight: 600; }
+
+.chart {
+  width: 100%;
+  height: 140px;
+  color: var(--accent);
+  margin: 10px 0 18px;
+}
+
+table { width: 100%; border-collapse: collapse; }
+
+td {
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  font-size: var(--t-sm);
+}
+
+td:last-child {
+  text-align: right;
+  font: 500 var(--t-sm) var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+tr.low td:last-child { color: var(--bad); }
+
+.strength-row { padding: 12px 0; border-top: 1px solid var(--line); }
+.strength-row h3 { margin: 0 0 4px; color: var(--ink); font-size: var(--t-sm); }
+.strength-row h3.plateau { color: var(--bad); }
+.strength-weeks { font: 500 var(--t-xs) var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+
+/* ---------- Цели ---------- */
+.goal-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 4px 12px;
+  align-items: baseline;
+  border-top: 1px solid var(--line);
+  padding: 12px 0;
+}
+
+.goal-label { font-size: var(--t-sm); }
+.goal-value { font: 500 var(--t-sm) var(--mono); font-variant-numeric: tabular-nums; }
+.goal-value.dash { color: var(--muted); }
+.goal-delta { font: 600 var(--t-xs) var(--mono); color: var(--accent); }
+.goal-row.ok .goal-delta { color: var(--good); }
+.goal-note { grid-column: 2 / -1; font-size: var(--t-xs); color: var(--muted); }
+.goals-link { margin-top: 24px; }
+
+/* ---------- Видео-эталон ----------
+   Стоит на экране тренировки, в растяжке и в справочнике одинаково.
+   Чип с таймкодом — одним тапом в нужное место ролика; признак сверки
+   раскрывается отдельно, чтобы не съедать экран между подходами. */
+.etalon {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  margin-top: 10px;
+}
+
+.etalon-link {
+  display: inline-block;
+  min-height: 32px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: 600 var(--t-sm) var(--mono);
+  text-decoration: none;
+  letter-spacing: 0.3px;
+}
+
+.etalon-cue {
+  align-self: stretch;
+  border-left: 2px solid var(--accent);
+  padding-left: 12px;
+}
+
+.etalon-cue summary {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  font-size: var(--t-xs);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.etalon-cue[open] summary { color: var(--accent); }
+
+.etalon-cue p {
+  margin: 4px 0 0;
+  font-size: var(--t-sm);
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+.etalon-cue .etalon-src {
+  margin-top: 4px;
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+
+/* Шапка тренировки выровнена по центру — эталон встаёт туда же,
+   а текст сверки остаётся по левому краю: его читают, а не разглядывают. */
+.wk-head .etalon { align-items: center; }
+.wk-head .etalon-cue { text-align: left; }
+
+/* В блоке растяжки эталон живёт внутри строки позиции. */
+ol.stretch .etalon { margin: 0 14px 14px 34px; }
+
+/* ---------- Справочник ---------- */
+/* Только карточка верхнего уровня: внутри неё живёт раскрытие эталона
+   со своим оформлением, и наследовать фон карточки ему нечего. */
+.guide > details {
+  background: var(--card);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 6px;
+}
+
+.guide > details > summary {
+  font-size: var(--t-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.guide > details > p { font-size: var(--t-sm); color: var(--muted); }
+
+.summary {
+  background: var(--card);
+  border-radius: 10px;
+  padding: 12px;
+  font: 500 var(--t-xs) var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Плашка обновления ---------- */
+.updated {
+  position: fixed;
+  left: 16px; right: 16px;
+  bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 16px);
+  background: var(--accent);
+  color: #000;
+  text-align: center;
+  padding: 12px;
+  border-radius: 999px;
+  font: 600 var(--t-sm) var(--sans);
+  z-index: 10;
+}
+
+.wk-nav button.ready {
+  background: var(--accent);
+  color: #000;
+  font-weight: 700;
+}
+
+.ready-hint {
+  margin-top: 10px;
+  text-align: center;
+  font-size: var(--t-sm);
+  color: var(--accent);
+}
+
+.go.ghost {
+  background: none;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+
+/* ---------- Меню «Ещё»: плитки и группы ---------- */
+/* Язык тот же, что у интервального таймера: крупные входы плитками,
+   второстепенное — строками с шевроном под серой подписью группы. */
+
+.scr-head {
+  display: grid;
+  grid-template-columns: var(--tap) 1fr var(--tap);
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.scr-title {
+  margin: 0;
+  text-align: center;
+  font: 700 var(--t-lg)/1.2 var(--sans);
+  letter-spacing: -0.3px;
+}
+
+.scr-back {
+  width: var(--tap); height: var(--tap);
+  background: none;
+  border: 0;
+  color: var(--accent);
+  font-size: 32px;
+  line-height: 1;
+  padding: 0;
+}
+
+.ico {
+  width: 24px; height: 24px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chev {
+  flex: 0 0 auto;
+  width: 8px; height: 8px;
+  border-right: 2px solid var(--muted);
+  border-top: 2px solid var(--muted);
+  transform: rotate(45deg);
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  min-height: 104px;
+  padding: 14px;
+  background: var(--card);
+  border: 0;
+  border-radius: var(--radius);
+  color: var(--ink);
+  text-align: left;
+}
+
+.tile.wide { grid-column: 1 / -1; }
+
+.tile-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: auto;
+}
+
+.tile-title { font: 600 var(--t-md)/1.2 var(--sans); }
+.tile-note { font-size: var(--t-sm); color: var(--muted); }
+
+.group { margin-bottom: 22px; }
+
+.group-cap {
+  padding: 0 14px 6px;
+  font-size: var(--t-xs);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.group-card {
+  background: var(--card);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.group-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 12px 14px;
+  background: none;
+  border: 0;
+  color: var(--ink);
+  text-align: left;
+  font-size: var(--t-md);
+}
+
+.group-row + .group-row { box-shadow: inset 0 1px 0 var(--line); }
+.group-row .row-title { flex: 1; }
+.group-row .row-value { color: var(--muted); font-size: var(--t-sm); }
+
+.file-hidden { display: none; }
+
+/* Полоса прогресса сессии и очередь ближайших упражнений. */
+.wk-date {
+  display: block;
+  width: 100%;
+  padding: 0 0 2px;
+  background: none;
+  border: 0;
+  color: var(--ink);
+  text-align: center;
+  font: 700 var(--t-md)/1.2 var(--sans);
+}
+
+.wk-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line);
+  margin: 10px 0 14px;
+  overflow: hidden;
+}
+
+.wk-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.25s ease;
+}
+
+.wk-queue { margin: 16px 0 8px; }
+
+/* Люфт 120 %: верхняя доза и условия допуска. Бейдж акцентный, памятка серая —
+   первое читается боковым зрением, второе только когда за ним потянулся. */
+.plus-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.plus-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.pos-plus {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+/* Подпись группы после памятки допуска не должна липнуть к ней. */
+.plus-hint + .group-cap { margin-top: 16px; }
+
+/* Упражнение, где добор 120 % уже взят: строка гасится, чтобы в списке
+   было видно, что осталось, а не что сделано. */
+.group-row.taken .row-title { color: var(--muted); }
+.group-row.taken .row-value { color: var(--accent); }
+
+/* Секунды удержания: узкое поле под строкой позиции, чтобы не ломать
+   выравнивание названия и дозы. Галочка отвечает «делал ли», цифра — «сколько». */
+.pos-secline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 0 34px;
+}
+.pos-sec {
+  width: 76px;
+  padding: 4px 8px;
+  font-size: 15px;
+  text-align: center;
+}
+.pos-secunit { font-size: 12px; color: var(--muted); }
+
+/* Плашка бонуса: загорается в шапке на каждом шаге сессии. Раньше люфт был
+   чипом под формой ввода и на седьмом экране подряд его не читал никто. */
+.bonus-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin: 10px 0 0;
+  padding: 10px 14px;
+  border: 1px solid var(--accent-soft);
+  border-radius: 14px;
+  background: var(--accent-soft);
+  text-align: left;
+  font: inherit;
+}
+.bonus-banner.static { cursor: default; }
+.bonus-banner.taken { opacity: 0.55; }
+.bonus-name { flex: 1; font-size: 14px; color: var(--ink); }
+.bonus-dose { font-size: 13px; color: var(--accent); white-space: nowrap; }
+.wk-gate { margin-top: 6px; font-size: 12px; color: var(--muted); }

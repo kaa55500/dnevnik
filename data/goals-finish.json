@@ -1,0 +1,21 @@
+{
+ "title": "Финиш 27.06.2027",
+ "date": "2027-06-27",
+ "goals": [
+  { "key": "weight", "label": "вес", "value": 82.3, "unit": "кг", "dir": "down", "source": "day.weight" },
+  { "key": "waist", "label": "талия", "value": 82.5, "unit": "см", "dir": "down", "source": "week.waist" },
+  { "key": "splitGap", "label": "просвет шпагата", "value": 10, "unit": "см", "dir": "down", "source": "week.splitGap" },
+  { "key": "handstandSec", "label": "стойка на руках", "value": 30, "unit": "с", "dir": "up", "source": "week.handstandSec" },
+  { "key": "handstandWalk", "label": "ходьба на руках", "value": 10, "unit": "м", "dir": "up", "source": "week.handstandWalk" },
+  { "key": "bench", "label": "жим лёжа", "value": 140, "unit": "кг", "dir": "up", "source": "exercise-weight:Жим лёжа" },
+  { "key": "pullups", "label": "подтягивания без веса", "value": 25, "unit": "повт", "dir": "up", "source": "exercise:Подтягивания без веса" },
+  { "key": "weightedPullups", "label": "подтягивания +50", "value": 5, "unit": "повт", "dir": "up", "source": "exercise:Подтягивания с весом" },
+  { "key": "muscleUp", "label": "выход силой", "value": 10, "unit": "повт", "dir": "up", "source": "exercise:Выход силой" },
+  { "key": "hspu", "label": "отжимания в стойке", "value": 10, "unit": "повт", "dir": "up", "source": "exercise:Отжимания в стойке у стены — КОНТРОЛЬ (только Н4)" },
+  { "key": "toesToBar", "label": "носки к перекладине", "value": 30, "unit": "повт", "dir": "up", "source": "exercise:Носки к перекладине — техника, на Н4 КОНТРОЛЬ" },
+  { "key": "abWheel", "label": "ролик стоя", "value": 10, "unit": "повт", "dir": "up", "source": "exercise:Ролик стоя — КОНТРОЛЬ (только Н4)" },
+  { "key": "lSit", "label": "уголок с пола", "value": 30, "unit": "с", "dir": "up", "source": "exercise:Уголок с пола — КОНТРОЛЬ (только Н4)" },
+  { "key": "flag", "label": "флажок", "value": 1, "unit": "повт", "dir": "up", "source": "exercise:Флажок — подводки" },
+  { "key": "pistol", "label": "присед на одной", "value": 1, "unit": "повт", "dir": "up", "source": "exercise:Присед на одной на возвышение" }
+ ]
+}
