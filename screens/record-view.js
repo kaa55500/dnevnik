@@ -33,12 +33,20 @@ function caption(text, meta) {
 }
 
 /** Строки «подпись — значение» одной колонкой: утро, вечер, неделя. */
-function facts(rows) {
+/**
+ * Строки «подпись — значение». С onEdit каждая ведёт в свою карточку дня:
+ * записанное должно правиться там же, где читается, а не искаться заново.
+ */
+function facts(rows, onEdit, fallback) {
   const box = el('div', { className: 'rec-facts' });
   for (const r of rows) {
-    box.append(el('div', { className: 'rec-fact' + (r.alert ? ' alert' : '') },
+    const key = r.edit || fallback;
+    const tag = onEdit && key ? 'button' : 'div';
+    const node = el(tag, { className: 'rec-fact' + (r.alert ? ' alert' : '') + (onEdit && key ? ' tap' : '') },
       el('span', { className: 'rec-fact-label', textContent: r.label }),
-      el('span', { className: 'rec-fact-value', textContent: r.value })));
+      el('span', { className: 'rec-fact-value', textContent: r.value }));
+    if (onEdit && key) node.onclick = () => onEdit(key);
+    box.append(node);
   }
   return box;
 }
@@ -95,12 +103,12 @@ function exerciseTable(rows) {
 /**
  * Запись дня целиком. onOpen(kind) — переход в сессию, если она открываема.
  */
-export function renderRecord(rec, { onOpen } = {}) {
+export function renderRecord(rec, { onOpen, onEdit } = {}) {
   const box = el('div', { className: 'rec' });
 
   if (rec.morning.length) {
     box.append(caption('Утро'));
-    box.append(facts(rec.morning));
+    box.append(facts(rec.morning, onEdit, 'morning'));
   }
 
   for (const s of rec.sessions) {
@@ -135,12 +143,12 @@ export function renderRecord(rec, { onOpen } = {}) {
 
   if (rec.evening.length) {
     box.append(caption('Вечер'));
-    box.append(facts(rec.evening));
+    box.append(facts(rec.evening, onEdit, 'evening'));
   }
 
   if (rec.weekly.length) {
     box.append(caption('Замеры недели'));
-    box.append(facts(rec.weekly));
+    box.append(facts(rec.weekly, onEdit, 'week'));
   }
 
   // Заметка дня писалась в базу и не показывалась нигде.

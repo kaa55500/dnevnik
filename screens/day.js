@@ -5,7 +5,7 @@ import { sessionsFor, sessionDates, planRange } from '../plan.js';
 import { plannedSeconds } from './stretch-block.js';
 import { todayISO, weekdayShort, isoWeek, addDays } from '../lib/dates.js';
 import { parseNum } from '../lib/format.js';
-import { pendingTasks, closedTasks, debts } from './day-logic.js';
+import { pendingTasks, closedTasks, debts, skipKeyOf, skipScopeOf } from './day-logic.js';
 import { dayRecord } from './journal-logic.js';
 import { renderRecord } from './record-view.js';
 import { navigate } from '../main.js';
@@ -130,12 +130,29 @@ export async function render(box, params = {}) {
     if (owed.length) {
       const card = el('section', { className: 'card debts' },
         el('h2', { textContent: `Не закрыто: ${owed.length}` }));
-      for (const o of owed.slice(-6)) {
-        card.append(el('button', {
-          className: 'debt-row',
-          textContent: `${o.date.slice(8)}.${o.date.slice(5, 7)} — ${o.title}`,
-          onclick: () => navigate('day', { date: o.date }),
-        }));
+      // Заголовок и список обязаны сходиться. Раньше в шапке стояло 13,
+      // а строк показывалось шесть — остальные семь пропадали молча.
+      const HEAD = 3;
+      const row = (o) => el('button', {
+        className: 'debt-row',
+        textContent: `${o.date.slice(8)}.${o.date.slice(5, 7)} — ${o.title}`,
+        onclick: () => navigate('day', { date: o.date }),
+      });
+      const fresh = [...owed].reverse();
+      for (const o of fresh.slice(0, HEAD)) card.append(row(o));
+      if (fresh.length > HEAD) {
+        const rest = el('div', { className: 'debt-rest' });
+        for (const o of fresh.slice(HEAD)) rest.append(row(o));
+        rest.hidden = true;
+        const more = el('button', {
+          className: 'debt-more',
+          textContent: `ещё ${fresh.length - HEAD} →`,
+          onclick: () => {
+            rest.hidden = !rest.hidden;
+            more.textContent = rest.hidden ? `ещё ${fresh.length - HEAD} →` : 'свернуть';
+          },
+        });
+        card.append(rest, more);
       }
       box.append(card);
     }
@@ -149,6 +166,9 @@ export async function render(box, params = {}) {
       el('h2', { textContent: 'Сделано' }));
     card.append(renderRecord(rec, {
       onOpen: (kind, code) => navigate('workout', { date, kind, code }),
+      // Правка открывается тут же, на экране дня: строка, которую читаешь,
+      // должна править себя сама, а не отправлять искать форму заново.
+      onEdit: (key) => navigate('day', { date, edit: key }),
     }));
     box.append(card);
   }
@@ -158,9 +178,42 @@ export async function render(box, params = {}) {
     box.append(el('p', { className: 'done-all', textContent: 'Всё закрыто.' }));
   }
 
+  /**
+   * Кнопка «не делал». Прочерк — законный ответ: строка закрывается, долг
+   * снимается, и «не бегал» перестаёт быть неотличимым от «забыл записать».
+   */
+  const skipButton = (t) => {
+    const scope = skipScopeOf(t.key);
+    const target = scope === 'week' ? week : day;
+    const put = scope === 'week' ? putWeek : putDay;
+    const key = skipKeyOf(t);
+    return el('button', {
+      className: 'skip-row' + (t.skipped ? ' on' : ''),
+      textContent: t.skipped ? '✓ не делал — вернуть в работу' : 'не делал',
+      onclick: async () => {
+        const next = { ...(target.skipped || {}) };
+        if (t.skipped) delete next[key];
+        else next[key] = true;
+        target.skipped = next;
+        try {
+          await save(target, put);
+        } catch (err) {
+          errorLine(box, err);
+        }
+      },
+    });
+  };
+
   const buildCard = (t) => {
-    const card = el('section', { className: 'card' + (t.required ? ' req' : '') },
-      el('h2', { textContent: t.title }));
+    const card = el('section', { className: 'card' + (t.required ? ' req' : '')
+      + (t.skipped ? ' skipped' : '') },
+    el('h2', { textContent: t.title }));
+
+    if (t.skipped) {
+      card.append(el('p', { className: 'hint', textContent: 'Отмечено «не делал».' }));
+      card.append(skipButton(t));
+      return card;
+    }
 
     if (t.key === 'morning') {
       const form = el('div', { className: 'grid' },
@@ -281,6 +334,7 @@ export async function render(box, params = {}) {
       );
     }
 
+    card.append(skipButton(t));
     return card;
   };
 
@@ -310,10 +364,16 @@ export async function render(box, params = {}) {
   // Закрытая строка не исчезает насовсем: форма складывается сюда, иначе
   // ошибку в утреннем весе уже никак не поправить (находка #4).
   const closed = closedTasks({ date, day, week, sessions, doneKinds, movedAway, settings });
+
+  // Строка, по которой тапнули в «Сделано», открывается формой сразу,
+  // а не прячется внутри свёрнутого блока.
+  const wanted = params.edit ? closed.find((t) => t.key === params.edit) : null;
+  if (wanted) box.append(buildCard(wanted));
+
   if (closed.length) {
     const det = el('details', { className: 'card edit-closed' });
     det.append(el('summary', { textContent: `Править записанное · ${closed.length}` }));
-    for (const t of closed) det.append(buildCard(t));
+    for (const t of closed) if (t !== wanted) det.append(buildCard(t));
     box.append(det);
   }
 }

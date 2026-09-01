@@ -767,7 +767,14 @@ async function draw(box) {
     const lo = Math.min(...loads);
     const hi = Math.max(...loads);
     const share = (v) => (hi === lo ? 1 : 0.4 + 0.6 * ((v - lo) / (hi - lo)));
-    ex.sets.forEach((s, i) => {
+    // Разминочные показываются сверху независимо от порядка записи: их часто
+    // вносят после рабочих, вспомнив. В базе порядок остаётся хронологическим —
+    // на нём стоит расчёт отдыха по меткам времени.
+    const ordered = ex.sets
+      .map((s, i) => ({ s, i }))
+      .sort((a, b) => Number(Boolean(b.s.warmup)) - Number(Boolean(a.s.warmup)));
+
+    ordered.forEach(({ s, i }, pos) => {
       const marks = [s.warmup ? 'разм.' : null, s.control ? 'контроль' : null]
         .filter(Boolean).join(' · ');
       const line = s.minutes != null
@@ -781,7 +788,7 @@ async function draw(box) {
       const li = el('li', {
         className: (s.warmup ? 'warm' : '') + (state.editSet === i ? ' editing' : ''),
       },
-      el('span', { className: 'set-n', textContent: String(i + 1) }),
+      el('span', { className: 'set-n', textContent: String(pos + 1) }),
       // Тап по строке открывает подход на правку: ошибся в весе — поправил,
       // а не удалил и записал заново.
       el('button', {

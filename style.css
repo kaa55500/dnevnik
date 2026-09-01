@@ -1348,3 +1348,31 @@ h2.wk-now { color: var(--accent); }
 
 /* Перенесённая сессия стоит на плановом месте, но помечена. */
 .pick.moved .pick-name { color: var(--warn); }
+
+/* Долги: три свежих на виду, остальные под раскрытием. */
+.debt-more {
+  width: 100%;
+  background: none;
+  border: 0;
+  padding: 10px 0 2px;
+  color: var(--muted);
+  font-size: var(--t-sm);
+  text-align: left;
+}
+
+/* «Не делал» — тихая кнопка внизу карточки, не соперничает с «Сохранить». */
+.skip-row {
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px 0;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+.skip-row.on { color: var(--warn); }
+.card.skipped { opacity: 0.7; }
+
+/* Строка записи, которая правится по тапу. */
+button.rec-fact { width: 100%; background: none; border: 0; text-align: left; font: inherit; }
+button.rec-fact.tap .rec-fact-label { color: var(--accent); }

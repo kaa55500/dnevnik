@@ -127,7 +127,8 @@ export function sessionSummary(workout) {
       lines.push(`${name}: пропуск — ${ex.skipReason || 'без причины'}`);
       continue;
     }
-    const sets = ex.sets || [];
+    // Разминка в своде не печатается: разбор в чате идёт по рабочим подходам.
+    const sets = (ex.sets || []).filter((x) => !x.warmup);
     if (!sets.length) continue;
     const body = sets.map((s) => {
       const rpe = s.rpe != null ? ` @${fmtNum(s.rpe, 1)}` : '';

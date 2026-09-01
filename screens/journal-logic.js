@@ -22,7 +22,10 @@ const same = (list) => list.every((v) => v === list[0]);
 export function foldSets(sets) {
   const groups = [];
   for (const s of sets || []) {
-    const key = [s.weight, s.rpe, Boolean(s.warmup), Boolean(s.control),
+    // RPE из ключа исключён: разные 8,5 и 9,0 при одном весе разрывали группу
+    // на две строки. Разброс не теряется — он печатается диапазоном,
+    // и именно он сигналит по правилу 4, а среднее его бы стёрло.
+    const key = [s.weight, Boolean(s.warmup), Boolean(s.control),
       s.minutes, s.km, s.hr].join('|');
     const last = groups[groups.length - 1];
     if (last && last.key === key) last.items.push(s);
@@ -45,10 +48,14 @@ export function foldSets(sets) {
       ? (items.length > 1 ? `${items.length}×${reps[0]}` : String(reps[0] ?? '—'))
       : reps.map((r) => (has(r) ? r : '—')).join(',');
 
+    const rpes = items.map((x) => x.rpe).filter(has);
+    const lo = rpes.length ? Math.min(...rpes) : null;
+    const hi = rpes.length ? Math.max(...rpes) : null;
+
     return {
       weight: has(s.weight) ? fmtWeight(s.weight) : '—',
       reps: repText,
-      rpe: has(s.rpe) ? fmtNum(s.rpe, 1) : '',
+      rpe: lo == null ? '' : (lo === hi ? fmtNum(lo, 1) : `${fmtNum(lo, 1)}–${fmtNum(hi, 1)}`),
       mark: s.warmup ? 'разм.' : (s.control ? 'контроль' : null),
     };
   });
@@ -67,7 +74,9 @@ export function exerciseRow(ex) {
       reason: ex.skipReason || 'без причины', note: ex.note || null,
     };
   }
-  const groups = foldSets(ex.sets);
+  // Разминка в запись дня не идёт: она не несёт ни объёма, ни прогрессии,
+  // а места занимает столько же, сколько рабочий подход.
+  const groups = foldSets((ex.sets || []).filter((x) => !x.warmup));
   if (!groups.length) return null;
   return { name, replaced, skipped: false, groups, note: ex.note || null };
 }
@@ -117,14 +126,17 @@ function weekRows(iso, week) {
   if (!week) return [];
   const dow = fromISO(iso).getDay();
   const out = [];
-  const push = (label, v, unit) => { if (has(v)) out.push({ label, value: `${fmtWeight(v)} ${unit}` }); };
-  if (dow === 3) push('талия', week.waist, 'см');
+  // Ключ редактора: по тапу открывается та карточка дня, где строка правится.
+  const push = (label, v, unit, edit = 'week') => {
+    if (has(v)) out.push({ label, value: `${fmtWeight(v)} ${unit}`, edit });
+  };
+  if (dow === 3) push('талия', week.waist, 'см', 'waist');
   if (dow === 2 && has(week.splitGap)) {
     // Протокол замера идёт вместе с цифрой: с 31.08 просвет снимается после
     // тренировки, и с цифрами до этой даты в один ряд он не встаёт.
     const mark = week.splitProtocol === 'post' ? ' · после тренировки'
       : (week.splitNoHome ? ' · без домашней' : '');
-    out.push({ label: 'просвет шпагата', value: `${fmtWeight(week.splitGap)} см${mark}` });
+    out.push({ label: 'просвет шпагата', value: `${fmtWeight(week.splitGap)} см${mark}`, edit: 'splitGap' });
   }
   if (dow === 0) {
     push('ккал ср.', week.kcalAvg, '');
@@ -136,7 +148,7 @@ function weekRows(iso, week) {
     push('бёдра', week.hips, 'см');
     push('голень', week.calf, 'см');
     push('шея', week.neck, 'см');
-    if (week.photo) out.push({ label: 'фото', value: 'снято' });
+    if (week.photo) out.push({ label: 'фото', value: 'снято', edit: 'week' });
   }
   return out;
 }
