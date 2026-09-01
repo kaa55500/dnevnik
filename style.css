@@ -759,9 +759,15 @@ ol.stretch .check {
    название забирает остаток и обрезается многоточием — строка не переносится. */
 .rec-table { display: flex; flex-direction: column; }
 
+/*
+ * Колонки под цифры считаются от самого длинного, что в них бывает:
+ * «15,15,12,12» в повторах и диапазон «8,0–8,5» в RPE. С прежними 62 и 38
+ * пикселей диапазон переносился на вторую строку, а на махах повторы
+ * и RPE налезали друг на друга.
+ */
 .rec-th, .rec-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 58px 62px 38px;
+  grid-template-columns: minmax(0, 1fr) 52px 86px 56px;
   align-items: baseline;
   gap: 6px;
   padding: 3px 0;
@@ -795,6 +801,8 @@ ol.stretch .check {
   text-align: right;
   font-size: var(--t-sm);
   font-variant-numeric: tabular-nums;
+  /* Цифры не переносятся: сжимается название, а не столбец. */
+  white-space: nowrap;
 }
 
 .rec-num.rpe { color: var(--muted); }

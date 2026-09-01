@@ -1168,23 +1168,34 @@ async function draw(box) {
     onclick: () => { stopTimer(); state = null; navigate('workout', {}); },
   }));
 
-  // Обратный путь из начатого заполнения. До этого выйти было некуда:
-  // единственная дверь вела через ЗАВЕРШИТЬ, то есть закрыть тренировку,
-  // которой не было.
-  if (workout.status === 'draft') {
+  // Обратный путь есть у любой записи, не только у черновика. Ошибочно
+  // закрытую тренировку удалить было нечем вовсе: единственная дверь вела
+  // через ЗАВЕРШИТЬ, а после него дверей не оставалось.
+  {
     const written = workout.exercises.reduce((n, e) => n + (e.sets || []).length, 0);
+    const done = workout.status === 'done';
     box.append(el('button', {
       className: 'back danger',
-      textContent: 'отменить заполнение',
+      textContent: done ? 'удалить запись тренировки' : 'отменить заполнение',
       onclick: async () => {
-        const what = written
-          ? `Удалить черновик? Записанное пропадёт: подходов ${written}.`
-          : 'Удалить пустой черновик?';
+        const what = done
+          ? `Удалить записанную тренировку? Подходов: ${written}. Вернуть будет нечем.`
+          : (written
+            ? `Удалить черновик? Записанное пропадёт: подходов ${written}.`
+            : 'Удалить пустой черновик?');
         if (!confirm(what)) return;
         stopTimer();
+        stopClock();
         if (workout.id != null) {
           try {
             await delWorkout(workout.id);
+            // Кардио-день заводит сессию дня сам: без чистки в дне осталась бы
+            // строка ходьбы или бега от удалённой тренировки.
+            const dayRow = await getDay(workout.date);
+            if (dayRow && (dayRow.cardio || []).some((c) => c.fromWorkout === workout.id)) {
+              dayRow.cardio = dayRow.cardio.filter((c) => c.fromWorkout !== workout.id);
+              await putDay(dayRow);
+            }
           } catch (err) {
             box.prepend(el('div', { className: 'error', textContent: 'Не удалось удалить: ' + err.message }));
             return;
