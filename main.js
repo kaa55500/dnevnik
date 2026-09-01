@@ -59,22 +59,45 @@ if ('serviceWorker' in navigator) {
   // по локальной схеме service worker недоступен, и приложение обязано
   // открыться всё равно.
   try {
-    const reg = navigator.serviceWorker.register('sw.js');
-    if (reg && typeof reg.catch === 'function') reg.catch(() => {});
+    // updateViaCache: 'none' — сам файл worker никогда не берётся из HTTP-кэша.
+    // Иначе телефон мог сутки не замечать, что вышла новая версия.
+    const reg = navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' });
+    if (reg && typeof reg.then === 'function') {
+      reg.then((r) => {
+        if (!r || typeof r.update !== 'function') return;
+        // Проверка на старте и при каждом возврате в приложение, не чаще
+        // раза в полминуты: телефон открывают в зале, и обновление должно
+        // подхватываться тогда же, а не «когда-нибудь».
+        let last = 0;
+        const check = () => {
+          const now = Date.now();
+          if (now - last < 30_000) return;
+          last = now;
+          r.update().catch(() => {});
+        };
+        check();
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') check();
+        });
+      }).catch(() => {});
+    }
   } catch { /* нет так нет: офлайн в собранном файле обеспечен самим файлом */ }
-  // Плашка об обновлении: новая версия применяется при следующем запуске,
-  // и молчать об этом нельзя — иначе непонятно, почему поменялся план.
+
+  // Новый worker забирает управление сразу (skipWaiting), но страница уже
+  // нарисована старым кодом — правки было видно только со следующего запуска.
+  // Поэтому плашка не сообщение, а кнопка: тап перезагружает страницу.
   let hadController = Boolean(navigator.serviceWorker.controller);
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!hadController) {
       hadController = true;
       return;
     }
-    const note = document.createElement('div');
+    if (document.querySelector('.updated')) return;
+    const note = document.createElement('button');
     note.className = 'updated';
-    note.textContent = 'Приложение обновлено';
+    note.textContent = 'Новая версия готова — открыть';
+    note.onclick = () => location.reload();
     document.body.append(note);
-    setTimeout(() => note.remove(), 4000);
   });
 }
 

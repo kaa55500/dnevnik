@@ -311,6 +311,41 @@ async function sectionData(box, { settings, plan, plans, weekId }) {
     line('база создана', (settings.createdAt || '—').slice(0, 16).replace('T', ' ')),
     line('записей', `${dDays.length} дн · ${dWeeks.length} нед · ${dWorkouts.length} трен`),
     line('источник', String(globalThis.location?.origin || '—').slice(0, 34))));
+  // Версия приложения и ручная проверка обновления. Без строки версии нельзя
+  // отличить «правка не доехала» от «доехала, но экран рисует старый код»,
+  // а это разные проблемы с разным лечением.
+  const verValue = el('span', { textContent: 'спрашиваю…' });
+  const verLine = el('div', { className: 'cardio-row' },
+    el('span', { textContent: 'версия' }), verValue);
+  box.append(el('div', { className: 'card' }, verLine, el('button', {
+    className: 'go ghost', textContent: 'Проверить обновление',
+    onclick: async (e) => {
+      e.target.textContent = 'Проверяю…';
+      try {
+        const reg = await navigator.serviceWorker?.getRegistration();
+        if (!reg) { e.target.textContent = 'Обновления недоступны'; return; }
+        await reg.update();
+        e.target.textContent = 'Проверено — плашка появится, если есть новое';
+      } catch {
+        e.target.textContent = 'Не удалось проверить';
+      }
+    },
+  })));
+
+  // Версию знает сам worker: в коде страницы её нет, и подделать нечем.
+  if (navigator.serviceWorker?.controller) {
+    const ch = new MessageChannel();
+    ch.port1.onmessage = (m) => {
+      verValue.textContent = String(m.data?.version || '—');
+    };
+    navigator.serviceWorker.controller.postMessage('version', [ch.port2]);
+    navigator.serviceWorker.addEventListener('message', (m) => {
+      if (m.data?.version) verValue.textContent = String(m.data.version);
+    });
+  } else {
+    verValue.textContent = 'без service worker';
+  }
+
   box.append(el('p', {
     className: 'hint',
     textContent: 'Если «открытий базы» после перезапуска браузера остаётся 1 — '

@@ -1015,6 +1015,7 @@ ol.stretch .etalon { margin: 0 14px 14px 34px; }
 
 /* ---------- Плашка обновления ---------- */
 .updated {
+  border: 0;
   position: fixed;
   left: 16px; right: 16px;
   bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 16px);
