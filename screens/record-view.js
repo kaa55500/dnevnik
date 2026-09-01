@@ -124,7 +124,7 @@ export function renderRecord(rec, { onOpen } = {}) {
     const cap = caption(`${s.title} · Н${s.weekN} · ${s.code}`, meta);
     if (onOpen) {
       cap.classList.add('tap');
-      cap.onclick = () => onOpen(s.kind);
+      cap.onclick = () => onOpen(s.kind, s.code);
     }
     box.append(cap);
     box.append(exerciseTable(s.rows));

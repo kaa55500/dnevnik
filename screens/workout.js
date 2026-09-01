@@ -236,7 +236,7 @@ async function finish(box) {
   }));
   box.append(el('button', {
     className: 'go ghost', textContent: '← вернуться к заполнению',
-    onclick: () => navigate('workout', { date: workout.date, kind: workout.kind }),
+    onclick: () => navigate('workout', { date: workout.date, kind: workout.kind, code: workout.dayCode }),
   }));
 }
 
@@ -465,7 +465,7 @@ async function drawOverview(box) {
         const to = workout.date;
         stopTimer();
         state = null;
-        navigate('workout', { date: to, kind });
+        navigate('workout', { date: to, kind, code: workout.dayCode });
         return;
       }
       state.index = 0;
@@ -1141,7 +1141,10 @@ async function chooser(box, iso) {
   // месте в календаре, а не пропадает из списка. Точное совпадение даты
   // главнее переноса — иначе чужая запись перехватила бы чужой слот.
   const workoutFor = (s) => {
-    const mine = workouts.filter((x) => (x.kind || 'gym') === s.kind);
+    // Код дня отсекает чужую запись: на 04.09 могут лежать плановый В2
+    // и приехавший со вторника Н1, оба «зал».
+    const mine = workouts.filter((x) => (x.kind || 'gym') === s.kind
+      && (x.dayCode ? x.dayCode === s.code : true));
     return mine.find((x) => x.date === s.date)
       || mine.find((x) => x.movedFrom === s.date)
       || null;
@@ -1159,7 +1162,7 @@ async function chooser(box, iso) {
     const b = el('button', {
       className: 'pick' + tone + (status === 'done' ? ' done' : '') + (moved ? ' moved' : ''),
       // Открывается там, где тренировка лежит на самом деле.
-      onclick: () => navigate('workout', { date: w ? w.date : s.date, kind: s.kind }),
+      onclick: () => navigate('workout', { date: w ? w.date : s.date, kind: s.kind, code: s.code }),
     });
     b.append(
       el('span', {
@@ -1220,6 +1223,7 @@ async function chooser(box, iso) {
 
 export async function render(box, params = {}) {
   const iso = params.date || todayISO();
+  const code = params.code || null;
 
   // Без явного выбора вкладка показывает список, а не молча берёт зал сегодня.
   if (!params.kind) {
@@ -1232,12 +1236,13 @@ export async function render(box, params = {}) {
   const date = iso;
   const kind = params.kind;
 
-  if (!state || state.workout.date !== date || state.workout.kind !== kind) {
+  if (!state || state.workout.date !== date || state.workout.kind !== kind
+      || (code && state.workout.dayCode !== code)) {
     stopTimer();
-    let workout = await findWorkout(date, kind);
+    let workout = await findWorkout(date, kind, code);
     if (!workout) {
       const planNow = await getPlan(date);
-      const hit = sessionFor(planNow, date, kind);
+      const hit = sessionFor(planNow, date, kind, code);
       // Запись не заводится, пока не выбран режим: заглянуть в план бесплатно.
       if (hit) workout = makeWorkout(date, hit);
     }
@@ -1256,7 +1261,7 @@ export async function render(box, params = {}) {
             className: 'group-row',
             onclick: async () => {
               const w = await startWorkout(date, m.session.kind, m);
-              if (w) navigate('workout', { date, kind: m.session.kind });
+              if (w) navigate('workout', { date, kind: m.session.kind, code: m.session.code });
             },
           },
           el('span', { className: 'row-title', textContent: m.session.code }),
@@ -1281,7 +1286,7 @@ export async function render(box, params = {}) {
     }
     if (!workout.prescription) {
       const plan = await getPlan(workout.date);
-      const hit = sessionFor(plan, workout.date, workout.kind || 'gym');
+      const hit = sessionFor(plan, workout.date, workout.kind || 'gym', workout.dayCode);
       workout.prescription = hit ? hit.session.exercises : [];
     }
     const guide = new Map((await getExercises()).map((e) => [e.name, e]));
@@ -1292,7 +1297,7 @@ export async function render(box, params = {}) {
     const plan = await getPlan(date);
     const mob = sessionFor(plan, date, 'mobility');
     const stretch = mob ? mob.session : null;
-    const own = sessionFor(plan, date, kind);
+    const own = sessionFor(plan, date, kind, workout.dayCode);
     const bonus = own && own.session.bonus ? own.session.bonus : null;
 
     // Сессия живёт с тем планом, с которым стартовала, — иначе сверка «план

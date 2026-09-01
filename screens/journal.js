@@ -54,7 +54,7 @@ export async function render(box, params = {}) {
       : null));
 
     card.append(renderRecord(rec, {
-      onOpen: (kind) => navigate('workout', { date: iso, kind }),
+      onOpen: (kind, code) => navigate('workout', { date: iso, kind, code }),
     }));
 
     box.append(card);

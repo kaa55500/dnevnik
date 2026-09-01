@@ -18,7 +18,13 @@ function allTasks(ctx) {
   const d = ctx.day || {};
   const w = ctx.week || {};
   const sessions = ctx.sessions || [];
-  const doneKinds = new Set(ctx.doneKinds || []);
+  // Ключ сессии — вид плюс код дня. После переноса на одной дате могут
+  // лежать два зальных дня, и по одному виду закрытость читалась ложно:
+  // приехавший Н1 закрывал плановый В2.
+  const doneKeys = new Set((ctx.doneKinds || []).map(
+    (x) => (typeof x === 'string' ? x : `${x.kind}|${x.code || ''}`)));
+  const closedSession = (s) => doneKeys.has(`${s.kind}|${s.code || ''}`)
+    || doneKeys.has(s.kind);
   const tasks = [];
 
   tasks.push({
@@ -39,7 +45,7 @@ function allTasks(ctx) {
       kind: s.kind,
       code: s.code,
       required: true,
-      done: doneKinds.has(s.kind) || Boolean(movedTo),
+      done: closedSession(s) || Boolean(movedTo),
       movedTo,
     });
   }

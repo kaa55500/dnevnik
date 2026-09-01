@@ -140,10 +140,14 @@ export function dayForDate(plan, iso) {
 }
 
 /** Сессия нужного вида в этот день: зал, дом, растяжка или кардио. */
-export function sessionFor(plan, iso, kind) {
+export function sessionFor(plan, iso, kind, code = null) {
   const hit = dayForDate(plan, iso);
   if (!hit) return null;
-  const s = (hit.day.sessions || []).find((x) => x.kind === kind);
+  const list = hit.day.sessions || [];
+  // Код дня главнее вида: после переноса на одной дате может оказаться
+  // два зальных дня, и по одному лишь виду они неразличимы.
+  const s = (code && list.find((x) => x.kind === kind && x.code === code))
+    || list.find((x) => x.kind === kind);
   return s ? { week: hit.week, day: hit.day, session: s } : null;
 }
 

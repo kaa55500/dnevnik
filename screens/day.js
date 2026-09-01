@@ -67,12 +67,12 @@ export async function render(box, params = {}) {
   const sessions = sessionsFor(plan, date).map((x) => x.session);
   const doneKinds = workouts
     .filter((w) => w.date === date && w.status === 'done')
-    .map((w) => w.kind || 'gym');
+    .map((w) => ({ kind: w.kind || 'gym', code: w.dayCode || '' }));
   // Сессии, уехавшие с этой даты на другую: план их здесь ждёт, а сделаны
   // они не здесь — долгом такое висеть не должно.
   const movedAway = workouts
     .filter((w) => w.movedFrom === date)
-    .map((w) => ({ kind: w.kind || 'gym', date: w.date }));
+    .map((w) => ({ kind: w.kind || 'gym', code: w.dayCode || '', date: w.date }));
 
   // Пометка «задним числом» относится к дню, а не к неделе: у недельной
   // записи своей даты нет, и флаг там ничего не значил бы.
@@ -148,7 +148,7 @@ export async function render(box, params = {}) {
     const card = el('section', { className: 'card done-card' },
       el('h2', { textContent: 'Сделано' }));
     card.append(renderRecord(rec, {
-      onOpen: (kind) => navigate('workout', { date, kind }),
+      onOpen: (kind, code) => navigate('workout', { date, kind, code }),
     }));
     box.append(card);
   }
@@ -195,7 +195,7 @@ export async function render(box, params = {}) {
         }),
         el('button', {
           className: 'go', textContent: 'Начать',
-          onclick: () => navigate('workout', { date, kind: t.key }),
+          onclick: () => navigate('workout', { date, kind: t.key, code: t.code }),
         }),
       );
     }
@@ -244,7 +244,7 @@ export async function render(box, params = {}) {
               week.splitProtocol = 'post';
             } else {
               week.splitProtocol = 'cold';
-              week.splitNoHome = !doneKinds.includes('home');
+              week.splitNoHome = !doneKinds.some((x) => x.kind === 'home');
             }
           }
           try {

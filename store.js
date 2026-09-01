@@ -117,9 +117,17 @@ export async function getDraft(iso) {
  * Тренировка этой даты и вида — черновик или уже завершённая.
  * Без этого повторное открытие закрытой сессии заводило вторую, пустую.
  */
-export async function findWorkout(iso, kind) {
+export async function findWorkout(iso, kind, code = null) {
   const list = await listWorkouts();
-  const mine = list.filter((w) => w.date === iso && (w.kind || 'gym') === kind);
+  let mine = list.filter((w) => w.date === iso && (w.kind || 'gym') === kind);
+  // После переноса на одной дате может лежать два зальных дня: Н1, приехавший
+  // со вторника, и плановый В2. По виду они неразличимы, и «Начать» на В2
+  // открывало чужую запись. Код дня разводит их.
+  if (code) {
+    const exact = mine.filter((w) => w.dayCode === code);
+    // У записей без кода (созданы до этой правки) отбирать нечего.
+    mine = exact.length ? exact : mine.filter((w) => !w.dayCode);
+  }
   return mine.find((w) => w.status === 'draft') || mine.find((w) => w.status === 'done') || null;
 }
 
