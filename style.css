@@ -1339,3 +1339,9 @@ h2.wk-now { color: var(--accent); }
   color: var(--ink);
   font: 600 var(--t-md) var(--mono);
 }
+
+/* Отмена заполнения — действие разрушительное, и выглядеть должно так. */
+.back.danger { color: var(--bad); }
+
+/* Сессия, уехавшая с этой даты на другую. */
+.card.moved .group-row { padding-left: 0; padding-right: 0; }

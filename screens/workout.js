@@ -458,6 +458,16 @@ async function drawOverview(box) {
     onclick: async () => {
       workout.fillMode = mode;
       if (!(await save(box))) return;
+      // Дату могли сменить прямо здесь — тогда экран открывается заново
+      // на новой дате, иначе адрес и запись разъедутся.
+      if (workout.date !== state.paramDate) {
+        const kind = workout.kind;
+        const to = workout.date;
+        stopTimer();
+        state = null;
+        navigate('workout', { date: to, kind });
+        return;
+      }
       state.index = 0;
       await draw(box);
     },
@@ -470,31 +480,29 @@ async function drawOverview(box) {
   card.append(pick('Заполняю потом', 'без секундомера, отдых руками', 'later'));
   box.append(card);
 
-  // Перенос — это просто другая дата у этой же тренировки. Список чужих
-  // сессий недели, стоявший здесь раньше, решал не ту задачу: состав уже
-  // выбран, менять надо только день.
-  box.append(el('div', { className: 'group-cap', textContent: 'сделал в другой день' }));
+  // Перенос — это просто другая дата у этой же тренировки. Режим он не
+  // выбирает: можно прийти второго и провести тренировку за первое,
+  // с секундомером и по меткам времени.
+  box.append(el('div', { className: 'group-cap', textContent: 'дата тренировки' }));
   const dateIn = el('input', { type: 'date', value: workout.date, className: 'move-date' });
-  box.append(el('div', { className: 'move-row' }, dateIn, el('button', {
-    className: 'go ghost',
-    textContent: 'перенести и заполнить',
-    onclick: async () => {
-      const v = dateIn.value;
-      if (!v || v === workout.date) return;
-      // Плановая дата остаётся в записи: без неё сверка «план против факта»
-      // прочитает перенос как пропуск.
-      workout.movedFrom = workout.date;
-      workout.date = v;
-      workout.backdated = v !== todayISO();
-      // Переносят задним числом — секундомеру там делать нечего.
-      workout.fillMode = 'later';
-      if (!(await save(box))) return;
-      const kind = workout.kind;
-      stopTimer();
-      state = null;
-      navigate('workout', { date: v, kind });
-    },
-  })));
+  dateIn.onchange = async () => {
+    const v = dateIn.value;
+    if (!v || v === workout.date) return;
+    // Плановая дата — та, что стояла в плане, а не предыдущая правка.
+    const planned = workout.movedFrom || workout.date;
+    workout.movedFrom = v === planned ? null : planned;
+    workout.date = v;
+    workout.backdated = v !== todayISO();
+    if (workout.id != null && !(await save(box))) return;
+    await draw(box);
+  };
+  box.append(el('div', { className: 'move-row' }, dateIn));
+  box.append(el('p', {
+    className: 'hint',
+    textContent: workout.movedFrom
+      ? `По плану это ${workout.movedFrom.slice(8)}.${workout.movedFrom.slice(5, 7)} — плановая дата сохранится в записи.`
+      : 'Поменяй, если делаешь эту тренировку в другой день. Режим выбирается выше.',
+  }));
 
   // Отмена: заглянул посмотреть — уходишь без следа. Пустой черновик,
   // заведённый прошлой версией, при этом удаляется.
@@ -1074,6 +1082,34 @@ async function draw(box) {
     onclick: () => { stopTimer(); state = null; navigate('workout', {}); },
   }));
 
+  // Обратный путь из начатого заполнения. До этого выйти было некуда:
+  // единственная дверь вела через ЗАВЕРШИТЬ, то есть закрыть тренировку,
+  // которой не было.
+  if (workout.status === 'draft') {
+    const written = workout.exercises.reduce((n, e) => n + (e.sets || []).length, 0);
+    box.append(el('button', {
+      className: 'back danger',
+      textContent: 'отменить заполнение',
+      onclick: async () => {
+        const what = written
+          ? `Удалить черновик? Записанное пропадёт: подходов ${written}.`
+          : 'Удалить пустой черновик?';
+        if (!confirm(what)) return;
+        stopTimer();
+        if (workout.id != null) {
+          try {
+            await delWorkout(workout.id);
+          } catch (err) {
+            box.prepend(el('div', { className: 'error', textContent: 'Не удалось удалить: ' + err.message }));
+            return;
+          }
+        }
+        state = null;
+        navigate('workout', {});
+      },
+    }));
+  }
+
   finishButton(box);
 }
 
@@ -1276,7 +1312,7 @@ export async function render(box, params = {}) {
     const week = weekRaw || { id: isoWeek(date) };
 
     state = {
-      workout, index: 0, timer: null, restLeft: 0,
+      workout, index: 0, timer: null, restLeft: 0, paramDate: date,
       warmup: false, lastSetAt: null, guide, showPlan: false,
       editSet: null, insertAt: null,
       stretch, bonus, day, week,

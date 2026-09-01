@@ -190,6 +190,9 @@ export function dayRecord(iso, ctx) {
     code: w.dayCode,
     weekN: w.weekN,
     status: w.status,
+    // Перенос виден везде, где видна сессия: иначе в журнале она выглядит
+    // сделанной не в свой день без всякого объяснения.
+    movedFrom: w.movedFrom || null,
     avgRPE: w.avgRPE,
     chestSignal: w.chestSignal,
     rows: (w.exercises || []).map(exerciseRow).filter(Boolean),

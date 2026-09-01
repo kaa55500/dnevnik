@@ -25,15 +25,22 @@ function allTasks(ctx) {
     key: 'morning', title: 'Утренний чек-ин', required: true, done: !empty(d.weight),
   });
 
+  // Тренировка, перенесённая на другой день, в этот день долгом не висит:
+  // она сделана, просто не здесь. Без этого плановая дата копила бы вечный
+  // долг по сессии, которая уже в журнале.
+  const movedAway = new Map((ctx.movedAway || []).map((m) => [m.kind, m.date]));
+
   for (const s of sessions) {
     if (s.kind === 'mobility') continue;
+    const movedTo = movedAway.get(s.kind) || null;
     tasks.push({
       key: s.kind,
       title: s.kind === 'home' ? 'Домашняя сессия' : s.title || s.code,
       kind: s.kind,
       code: s.code,
       required: true,
-      done: doneKinds.has(s.kind),
+      done: doneKinds.has(s.kind) || Boolean(movedTo),
+      movedTo,
     });
   }
 

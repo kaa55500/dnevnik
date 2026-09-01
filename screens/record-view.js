@@ -117,6 +117,8 @@ export function renderRecord(rec, { onOpen } = {}) {
     const meta = [`${s.rows.length} упр`]
       .concat(s.avgRPE != null ? [`RPE ${s.avgRPE.toFixed(1).replace('.', ',')}`] : [])
       .concat(s.status === 'draft' ? ['черновик'] : [])
+      .concat(s.movedFrom
+        ? [`перенос с ${s.movedFrom.slice(8)}.${s.movedFrom.slice(5, 7)}`] : [])
       .join(' · ');
 
     const cap = caption(`${s.title} · Н${s.weekN} · ${s.code}`, meta);

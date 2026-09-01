@@ -68,6 +68,11 @@ export async function render(box, params = {}) {
   const doneKinds = workouts
     .filter((w) => w.date === date && w.status === 'done')
     .map((w) => w.kind || 'gym');
+  // Сессии, уехавшие с этой даты на другую: план их здесь ждёт, а сделаны
+  // они не здесь — долгом такое висеть не должно.
+  const movedAway = workouts
+    .filter((w) => w.movedFrom === date)
+    .map((w) => ({ kind: w.kind || 'gym', date: w.date }));
 
   // Пометка «задним числом» относится к дню, а не к неделе: у недельной
   // записи своей даты нет, и флаг там ничего не значил бы.
@@ -148,7 +153,7 @@ export async function render(box, params = {}) {
     box.append(card);
   }
 
-  const tasks = pendingTasks({ date, day, week, sessions, doneKinds, settings });
+  const tasks = pendingTasks({ date, day, week, sessions, doneKinds, movedAway, settings });
   if (!tasks.length) {
     box.append(el('p', { className: 'done-all', textContent: 'Всё закрыто.' }));
   }
@@ -281,9 +286,30 @@ export async function render(box, params = {}) {
 
   for (const t of tasks) box.append(buildCard(t));
 
+  // Уехавшая сессия не исчезает с плановой даты молча: видно, что она сделана
+  // и где именно. Иначе день выглядит так, будто тренировки не было вовсе.
+  if (movedAway.length) {
+    const card = el('section', { className: 'card moved' },
+      el('h2', { textContent: 'Перенесено' }));
+    for (const m of movedAway) {
+      const w = workouts.find((x) => x.movedFrom === date && (x.kind || 'gym') === m.kind);
+      card.append(el('button', {
+        className: 'group-row',
+        onclick: () => navigate('day', { date: m.date }),
+      },
+      el('span', { className: 'row-title', textContent: w ? (w.dayCode || m.kind) : m.kind }),
+      el('span', {
+        className: 'row-value',
+        textContent: `сделана ${weekdayShort(m.date)} ${m.date.slice(8)}.${m.date.slice(5, 7)}`,
+      }),
+      el('span', { className: 'chev' })));
+    }
+    box.append(card);
+  }
+
   // Закрытая строка не исчезает насовсем: форма складывается сюда, иначе
   // ошибку в утреннем весе уже никак не поправить (находка #4).
-  const closed = closedTasks({ date, day, week, sessions, doneKinds, settings });
+  const closed = closedTasks({ date, day, week, sessions, doneKinds, movedAway, settings });
   if (closed.length) {
     const det = el('details', { className: 'card edit-closed' });
     det.append(el('summary', { textContent: `Править записанное · ${closed.length}` }));
