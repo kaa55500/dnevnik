@@ -18,18 +18,22 @@ export function planReps(s) {
 /**
  * Что подставить в поля следующего подхода.
  * Приоритет: предыдущий подход этой тренировки → прошлая тренировка → план.
+ *
+ * RPE идёт по тому же приоритету, что вес и повторы. Раньше он всегда
+ * откатывался к плановому: введёшь 8,5 при плановых 8 — и следующий подход
+ * снова предлагает 8, то есть введённое не переживает даже одного подхода.
  */
 export function nextSetDefaults(presc, doneSets, history) {
   const working = (doneSets || []).filter((s) => !s.warmup);
   if (working.length) {
     const last = working[working.length - 1];
-    return { weight: last.weight, reps: last.reps, rpe: presc.rpe ?? null };
+    return { weight: last.weight, reps: last.reps, rpe: last.rpe ?? presc.rpe ?? null };
   }
   const fromHistory = history && history.length ? history[history.length - 1] : null;
   return {
     weight: fromHistory ? fromHistory.weight : firstNumber(presc.weight),
     reps: fromHistory ? fromHistory.reps : planReps(presc.reps),
-    rpe: presc.rpe ?? null,
+    rpe: (fromHistory && fromHistory.rpe != null) ? fromHistory.rpe : (presc.rpe ?? null),
   };
 }
 
@@ -67,4 +71,58 @@ export function restBetween(prevAtISO, nowMs) {
   if (!Number.isFinite(prev)) return null;
   const sec = Math.round((nowMs - prev) / 1000);
   return sec >= 0 ? sec : null;
+}
+
+/**
+ * Режим заполнения сессии. Записи, созданные до 01.09, поля не несут —
+ * для них считаем `live`: они и заполнялись по ходу.
+ */
+export function fillModeOf(workout) {
+  return (workout && workout.fillMode) === 'later' ? 'later' : 'live';
+}
+
+/**
+ * Отдых подхода. Метки времени годятся, только когда заполняешь по ходу
+ * тренировки: 01.09 сессия вносилась целиком после зала, метки легли одна
+ * к другой, и в журнал ушли «отдыхи» по 1–3 секунды. Прежняя защита стояла
+ * на `backdated`, то есть на дате, а не на способе заполнения, и этот случай
+ * пропустила — день-то был сегодняшний.
+ *
+ * Введённое руками побеждает измеренное всегда: атлет знает, что делал.
+ * Возвращается пара: сама цифра и признак, что она вспомнена, а не измерена.
+ * Смешивать их в одном столбце нельзя — через месяц не отличить.
+ */
+export function restForSet({ mode, lastSetAt, now, manual }) {
+  if (manual != null && Number.isFinite(manual) && manual >= 0) {
+    return { rest: Math.round(manual), restManual: true };
+  }
+  if (mode !== 'live') return { rest: null, restManual: false };
+  return { rest: restBetween(lastSetAt, now ?? Date.now()), restManual: false };
+}
+
+/**
+ * Пустое упражнение вне плана. Живёт в обоих массивах записи, чтобы сверка
+ * «план против факта» шла по индексу, как раньше, и помечено `unplanned`:
+ * в знаменатель «план закрыт» не входит, в недельный объём входит —
+ * это настоящая работа, а не приписка.
+ *
+ * 01.09 атлет сделал три выхода силой, которых в силовом дне нет с пересборки
+ * 31.08, и записать их было некуда: дописывать умел только бонус.
+ */
+export function insertExercise(workout, index, name) {
+  const at = Math.max(0, Math.min(Number(index) ?? 0, workout.exercises.length));
+  workout.prescription = workout.prescription || [];
+  workout.prescription.splice(at, 0, { name, unplanned: true, sets: 0, reps: '—' });
+  workout.exercises.splice(at, 0, {
+    name, planName: null, replacedWith: null, unplanned: true,
+    skipped: false, skipReason: null, note: '', sets: [],
+  });
+  return at;
+}
+
+/** Упражнения, по которым считается «план закрыт»: без бонуса и внеплановых. */
+export function requiredPairs(workout) {
+  return (workout.exercises || [])
+    .map((e, i) => ({ e, p: (workout.prescription || [])[i] || {}, i }))
+    .filter((x) => !x.p.optional && !x.p.unplanned && !x.e.unplanned);
 }

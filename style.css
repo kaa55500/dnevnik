@@ -1234,3 +1234,65 @@ ol.stretch .etalon { margin: 0 14px 14px 34px; }
 .bonus-name { flex: 1; font-size: 14px; color: var(--ink); }
 .bonus-dose { font-size: 13px; color: var(--accent); white-space: nowrap; }
 .wk-gate { margin-top: 6px; font-size: 12px; color: var(--muted); }
+
+/* ---- Режим заполнения, правка подхода, упражнение вне плана (01.09) ---- */
+
+/* Режим виден на каждом шаге: от него зависит, пишется ли отдых. */
+.wk-mode {
+  display: inline-block;
+  margin: 0 auto 6px;
+  padding: 3px 10px;
+  background: var(--card-2);
+  color: var(--muted);
+  border: 0;
+  border-radius: 999px;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+/* Обзор перед выбором режима: план читается, но не тапается. */
+ol.plan-list.overview .plan-row { cursor: default; }
+
+/* Вставка упражнения между строками плана — тонкая полоса, не кнопка-блок. */
+ol.plan-list li.plan-insert { border-top: 0; }
+.insert-here {
+  width: 100%;
+  background: none;
+  border: 0;
+  padding: 5px 14px;
+  text-align: left;
+  color: var(--muted);
+  font-size: 12px;
+}
+.insert-here:active { color: var(--accent); }
+
+/* Поиск по справочнику при добавлении упражнения вне плана. */
+.picker { margin: 8px 0 14px; }
+.picker-search {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 12px 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  font-size: 16px;
+}
+.picker-list .group-row.free .row-title { color: var(--warn); }
+
+/* Отдых руками: поле уже остальных, оно вспомогательное. */
+.wk-form label.rest-row input { max-width: 8ch; }
+
+/* Правка записанного подхода. */
+ol.wk-sets li.editing { outline: 1px solid var(--accent); border-radius: 8px; }
+.set-body {
+  flex: 1;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  min-height: var(--tap);
+}
+.wk-add.editing { background: var(--warn); color: #000; }
