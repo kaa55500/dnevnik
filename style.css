@@ -1296,3 +1296,6 @@ ol.wk-sets li.editing { outline: 1px solid var(--accent); border-radius: 8px; }
   min-height: var(--tap);
 }
 .wk-add.editing { background: var(--warn); color: #000; }
+
+/* Заголовок текущей недели в выборе сессии. */
+h2.wk-now { color: var(--accent); }

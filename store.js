@@ -124,6 +124,21 @@ export async function findWorkout(iso, kind) {
 }
 
 /**
+ * Удалить тренировку. Нужна ровно для одного случая: открыл сессию посмотреть,
+ * ничего не записал и ушёл — пустой черновик не должен оставаться в журнале
+ * и мозолить глаза в списке «пропущенное».
+ */
+export async function delWorkout(id) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const t = db.transaction('workouts', 'readwrite');
+    t.objectStore('workouts').delete(id);
+    t.oncomplete = () => resolve(true);
+    t.onerror = () => reject(t.error);
+  });
+}
+
+/**
  * Справочник целиком заменяется присланным: он не пользовательские данные,
  * а часть поставки, и снятая позиция должна уходить из базы, а не оставаться
  * висеть. Бэкап его не несёт, терять нечего.

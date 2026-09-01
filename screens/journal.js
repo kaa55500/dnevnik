@@ -17,7 +17,17 @@ export async function render(box, params = {}) {
   box.append(el('h1', { textContent: 'Журнал' }));
 
   if (!dates.length) {
+    // Пустой журнал был тупиком: ни одной кнопки, выход только через нижнюю
+    // навигацию. На чистом телефоне это первый экран, который видит человек.
     box.append(el('p', { textContent: 'Записей пока нет.' }));
+    box.append(el('button', {
+      className: 'go', textContent: 'Сегодняшний день →',
+      onclick: () => navigate('day', { date: todayISO() }),
+    }));
+    box.append(el('button', {
+      className: 'go ghost', textContent: 'Календарь',
+      onclick: () => navigate('calendar', { date: todayISO() }),
+    }));
     return;
   }
 

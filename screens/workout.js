@@ -1,5 +1,5 @@
 import {
-  findWorkout, putWorkout, getPlan, getDay, putDay, getWeek, putWeek,
+  findWorkout, putWorkout, delWorkout, getPlan, getDay, putDay, getWeek, putWeek,
   listWorkouts, getExercises, listPlans,
 } from '../store.js';
 import { sessionFor, sessionsFor, sessionsAround } from '../plan.js';
@@ -60,10 +60,13 @@ async function movableSessions(date) {
   return out;
 }
 
-async function startWorkout(date, kind, moved = null) {
-  const plan = await getPlan(date);
-  const hit = moved || sessionFor(plan, date, kind);
-  if (!hit) return null;
+/**
+ * Объект тренировки без записи в базу. Открыть сессию посмотреть должно быть
+ * бесплатно: до 01.09 сам факт открытия заводил черновик, и он навсегда
+ * оставался в журнале как «пропущенное», даже если атлет просто заглянул
+ * в план. Запись появляется в момент выбора режима заполнения.
+ */
+function makeWorkout(date, hit, moved = null) {
   const { week, session } = hit;
   const rpes = session.exercises.map((e) => e.rpe).filter((v) => v != null);
   const workout = {
@@ -89,6 +92,14 @@ async function startWorkout(date, kind, moved = null) {
       skipped: false, skipReason: null, note: '', sets: [],
     })),
   };
+  return workout;
+}
+
+async function startWorkout(date, kind, moved = null) {
+  const plan = await getPlan(date);
+  const hit = moved || sessionFor(plan, date, kind);
+  if (!hit) return null;
+  const workout = makeWorkout(date, hit, moved);
   workout.id = await putWorkout(workout);
   return workout;
 }
@@ -118,7 +129,9 @@ function startTimer(seconds, onTick) {
 
 async function save(box) {
   try {
-    await putWorkout(state.workout);
+    const id = await putWorkout(state.workout);
+    // Первое сохранение заводит запись: до выбора режима её в базе нет.
+    if (state.workout.id == null) state.workout.id = id;
     return true;
   } catch (err) {
     box.prepend(el('div', {
@@ -480,9 +493,20 @@ async function drawOverview(box) {
     box.append(other);
   }
 
+  // Отмена: заглянул посмотреть — уходишь без следа. Пустой черновик,
+  // заведённый прошлой версией, при этом удаляется.
   box.append(el('button', {
-    className: 'back', textContent: '← другая сессия',
-    onclick: () => { stopTimer(); state = null; navigate('workout', {}); },
+    className: 'back', textContent: '← не заполняю, просто смотрел',
+    onclick: async () => {
+      stopTimer();
+      const w = workout;
+      const empty = (w.exercises || []).every((e) => !(e.sets || []).length && !e.skipped);
+      if (w.id != null && w.status === 'draft' && empty) {
+        try { await delWorkout(w.id); } catch { /* не удалилось — не беда */ }
+      }
+      state = null;
+      navigate('workout', {});
+    },
   }));
 }
 
@@ -1061,50 +1085,84 @@ const PLUS_GATE = 'сон ≥ 7 ч · RPE в коридоре · сигналы 
  * в «сегодня тренировки нет» нельзя — любой день цикла должен открываться.
  */
 async function chooser(box, iso) {
-  const [plans, workouts] = await Promise.all([listPlans(), listWorkouts()]);
-  const { past, today, next } = sessionsAround(plans, iso);
+  const [plan, workouts] = await Promise.all([getPlan(iso), listWorkouts()]);
+
+  box.append(el('h1', { textContent: 'Какую сессию открыть' }));
+
+  if (!plan) {
+    box.append(el('p', { textContent: 'Загруженных планов нет — импортируй план в «Ещё».' }));
+    box.append(el('button', {
+      className: 'back', textContent: 'Календарь →',
+      onclick: () => navigate('calendar', { date: iso }),
+    }));
+    return;
+  }
+
   const statusOf = (s) => {
     const w = workouts.find((x) => x.date === s.date && (x.kind || 'gym') === s.kind);
     return w ? w.status : null;
   };
 
-  box.append(el('h1', { textContent: 'Какую сессию открыть' }));
+  const dm = (d) => `${d.slice(8)}.${d.slice(5, 7)}`;
 
-  if (!past.length && !today.length && !next.length) {
-    box.append(el('p', { textContent: 'Загруженных планов нет — импортируй план в «Ещё».' }));
-    return;
-  }
-
-  const row = (s, tone) => {
+  const row = (s) => {
     const status = statusOf(s);
     const mark = status === 'done' ? ' · записана' : (status === 'draft' ? ' · черновик' : '');
+    const tone = s.date === iso ? ' now' : (s.date > iso ? ' future' : '');
     const b = el('button', {
-      className: 'pick' + (tone ? ' ' + tone : '') + (status === 'done' ? ' done' : ''),
+      className: 'pick' + tone + (status === 'done' ? ' done' : ''),
       onclick: () => navigate('workout', { date: s.date, kind: s.kind }),
     });
     b.append(
       el('span', {
         className: 'pick-date',
-        textContent: `${weekdayShort(s.date)} ${s.date.slice(8)}.${s.date.slice(5, 7)}`,
+        textContent: `${weekdayShort(s.date)} ${dm(s.date)}`,
       }),
       el('span', {
         className: 'pick-name',
-        textContent: `Н${s.weekN} · ${s.code} · ${KIND_RU[s.kind] || s.kind}${mark}`,
+        textContent: `${s.code} · ${KIND_RU[s.kind] || s.kind}${mark}`,
       }),
       el('span', { className: 'pick-count', textContent: `${s.count} упр.` }),
     );
     return b;
   };
 
-  const group = (title, items, tone) => {
-    if (!items.length) return;
-    box.append(el('h2', { textContent: title }));
-    for (const s of items) box.append(row(s, tone));
-  };
+  // Календарный порядок и группировка по неделям. Прежние «Сегодня» /
+  // «Пропущенное и прошлое» / «Впереди» ломали хронологию: прошлое висело
+  // между сегодняшним днём и ближайшими сессиями, и найти нужную дату
+  // приходилось глазами по всему экрану.
+  const weeks = [...(plan.weeks || [])].sort((a, b) => a.n - b.n);
+  for (const week of weeks) {
+    const rows = [];
+    for (const day of week.days || []) {
+      for (const s of day.sessions || []) {
+        if (s.kind === 'mobility') continue;
+        rows.push({
+          date: day.date, kind: s.kind, code: s.code,
+          count: (s.exercises || []).length,
+        });
+      }
+    }
+    if (!rows.length) continue;
+    rows.sort((a, b) => a.date.localeCompare(b.date) || a.kind.localeCompare(b.kind));
 
-  group('Сегодня', today, 'now');
-  group('Пропущенное и прошлое', [...past].reverse());
-  group('Впереди', next, 'future');
+    const dates = rows.map((r) => r.date).sort();
+    const from = dates[0];
+    const to = dates[dates.length - 1];
+    const current = iso >= from && iso <= to;
+    const title = `Н${week.n} · ${dm(from)}–${dm(to)}`
+      + (week.kind === 'deload' ? ' · разгрузка' : '')
+      + (current ? ' · эта неделя' : '');
+
+    const head = el('h2', { className: current ? 'wk-now' : '', textContent: title });
+    box.append(head);
+    for (const s of rows) box.append(row(s));
+    // Список открывается на текущей неделе, а не на первой: иначе каждый раз
+    // приходится проматывать два месяца прошлого, чтобы дойти до сегодня.
+    if (current && typeof head.scrollIntoView === 'function') {
+      setTimeout(() => head.scrollIntoView({ block: 'start' }), 0);
+    }
+  }
 
   box.append(el('button', {
     className: 'back', textContent: 'Календарь →',
@@ -1129,7 +1187,12 @@ export async function render(box, params = {}) {
   if (!state || state.workout.date !== date || state.workout.kind !== kind) {
     stopTimer();
     let workout = await findWorkout(date, kind);
-    if (!workout) workout = await startWorkout(date, kind);
+    if (!workout) {
+      const planNow = await getPlan(date);
+      const hit = sessionFor(planNow, date, kind);
+      // Запись не заводится, пока не выбран режим: заглянуть в план бесплатно.
+      if (hit) workout = makeWorkout(date, hit);
+    }
     if (!workout) {
       box.append(el('h2', { textContent: 'На эту дату сессии в плане нет' }));
       const movable = await movableSessions(date);
@@ -1199,7 +1262,8 @@ export async function render(box, params = {}) {
           name: e.name, planName: e.name, replacedWith: null,
           skipped: false, skipReason: null, note: '', sets: [],
         }))];
-        await putWorkout(workout);
+        // Незаписанную сессию не создаём этим побочно: её заведёт выбор режима.
+        if (workout.id != null) await putWorkout(workout);
       }
     }
     const [dayRaw, weekRaw, allWorkouts] = await Promise.all([
