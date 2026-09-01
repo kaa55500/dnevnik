@@ -470,28 +470,31 @@ async function drawOverview(box) {
   card.append(pick('Заполняю потом', 'без секундомера, отдых руками', 'later'));
   box.append(card);
 
-  const movable = await movableSessions(workout.date);
-  if (movable.length) {
-    box.append(el('div', { className: 'group-cap', textContent: 'это была тренировка другого дня' }));
-    const other = el('div', { className: 'group-card' });
-    for (const m of movable) {
-      other.append(el('button', {
-        className: 'group-row',
-        onclick: () => {
-          stopTimer();
-          state = null;
-          navigate('workout', { date: m.date, kind: m.session.kind });
-        },
-      },
-      el('span', { className: 'row-title', textContent: m.session.code }),
-      el('span', {
-        className: 'row-value',
-        textContent: `${weekdayShort(m.date)} ${m.date.slice(8)}.${m.date.slice(5, 7)}`,
-      }),
-      el('span', { className: 'chev' })));
-    }
-    box.append(other);
-  }
+  // Перенос — это просто другая дата у этой же тренировки. Список чужих
+  // сессий недели, стоявший здесь раньше, решал не ту задачу: состав уже
+  // выбран, менять надо только день.
+  box.append(el('div', { className: 'group-cap', textContent: 'сделал в другой день' }));
+  const dateIn = el('input', { type: 'date', value: workout.date, className: 'move-date' });
+  box.append(el('div', { className: 'move-row' }, dateIn, el('button', {
+    className: 'go ghost',
+    textContent: 'перенести и заполнить',
+    onclick: async () => {
+      const v = dateIn.value;
+      if (!v || v === workout.date) return;
+      // Плановая дата остаётся в записи: без неё сверка «план против факта»
+      // прочитает перенос как пропуск.
+      workout.movedFrom = workout.date;
+      workout.date = v;
+      workout.backdated = v !== todayISO();
+      // Переносят задним числом — секундомеру там делать нечего.
+      workout.fillMode = 'later';
+      if (!(await save(box))) return;
+      const kind = workout.kind;
+      stopTimer();
+      state = null;
+      navigate('workout', { date: v, kind });
+    },
+  })));
 
   // Отмена: заглянул посмотреть — уходишь без следа. Пустой черновик,
   // заведённый прошлой версией, при этом удаляется.

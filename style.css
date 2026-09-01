@@ -190,6 +190,26 @@ label {
 label > input[type="number"],
 label > input[type="text"] { margin-left: auto; }
 
+/*
+ * Строка «подпись — поле» раскладывается сеткой, а не растяжкой.
+ * На узком экране поле не сжималось ниже своей внутренней ширины (size=20)
+ * и вылезало за карточку: подпись в две строки, а поле уезжает за правый край.
+ * Сетка задаёт полю потолок, подпись забирает остальное и переносится.
+ */
+label:has(> input[type="number"]),
+label:has(> input[type="text"]) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(96px, 150px);
+  gap: 10px;
+}
+
+label:has(> input[type="number"]) > input,
+label:has(> input[type="text"]) > input {
+  width: 100%;
+  min-width: 0;
+  margin-left: 0;
+}
+
 input[type="number"],
 input[type="text"],
 select {
@@ -1280,8 +1300,15 @@ ol.plan-list li.plan-insert { border-top: 0; }
 }
 .picker-list .group-row.free .row-title { color: var(--warn); }
 
-/* Отдых руками: поле уже остальных, оно вспомогательное. */
-.wk-form label.rest-row input { max-width: 8ch; }
+/*
+ * Отдых руками. Своя сетка на две колонки: общая раскладка формы рассчитана
+ * на «подпись — минус — поле — плюс», и поле отдыха попадало в колонку
+ * шириной с кнопку шага — вписать туда было нечего.
+ */
+.wk-form label.rest-row {
+  grid-template-columns: 52px minmax(0, 1fr);
+}
+.wk-form label.rest-row input { max-width: 12ch; }
 
 /* Правка записанного подхода. */
 ol.wk-sets li.editing { outline: 1px solid var(--accent); border-radius: 8px; }
@@ -1299,3 +1326,16 @@ ol.wk-sets li.editing { outline: 1px solid var(--accent); border-radius: 8px; }
 
 /* Заголовок текущей недели в выборе сессии. */
 h2.wk-now { color: var(--accent); }
+
+/* Перенос тренировки на другую дату — прямо на обзоре сессии. */
+.move-row { display: grid; gap: 8px; margin-bottom: 14px; }
+.move-date {
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--ink);
+  font: 600 var(--t-md) var(--mono);
+}
