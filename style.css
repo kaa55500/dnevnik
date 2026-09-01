@@ -515,7 +515,7 @@ ol.wk-sets li.warm { opacity: 0.5; }
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 18px;
+  margin-top: 8px;
 }
 
 .wk-nav button {
@@ -529,16 +529,22 @@ ol.wk-sets li.warm { opacity: 0.5; }
 
 .wk-nav button[disabled] { opacity: 0.3; }
 
+/*
+ * Место под секундомер держится всегда. Раньше пустой счётчик скрывался,
+ * кнопки «заметка · замена · пропуск» разъезжались по всей строке, а с началом
+ * отдыха прыгали обратно и мельчали — под пальцем менялась вся строка.
+ */
 .wk-rest {
-  flex: 1;
+  display: block;
+  width: 100%;
+  min-height: 1.1em;
+  margin-top: 14px;
   text-align: center;
   font: 200 var(--t-huge)/1 var(--mono);
   font-variant-numeric: tabular-nums;
   letter-spacing: -2px;
   color: var(--ink);
 }
-
-.wk-rest:empty { display: none; }
 .wk-rest.over { color: var(--good); }
 
 .wk-finish {
@@ -1380,3 +1386,15 @@ button.rec-fact.tap .rec-fact-label { color: var(--accent); }
 /* Активность вне плана — свёрнутая карточка внизу дня. */
 .add-extra summary { color: var(--muted); font-size: var(--t-sm); }
 .add-extra .group-card { margin-top: 10px; }
+
+/* Часы тренировки: от первого записанного подхода. */
+.wk-clock {
+  display: inline-block;
+  margin: 0 auto 4px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--card-2);
+  color: var(--muted);
+  font: 600 var(--t-xs)/1.6 var(--mono);
+  font-variant-numeric: tabular-nums;
+}

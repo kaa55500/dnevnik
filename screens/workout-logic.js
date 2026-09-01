@@ -161,3 +161,17 @@ export function makeUnplannedWorkout(date, kind, week, todayIso) {
     exercises: [],
   };
 }
+
+/**
+ * Часы тренировки. Отсчёт от первого записанного подхода, а не от открытия
+ * экрана: заглянуть в план накануне — обычное дело, и от этого в журнал
+ * ушли бы десять часов. В закрытой сессии показывают время до завершения.
+ */
+export function workoutElapsed(workout, nowMs = Date.now()) {
+  if (!workout || !workout.firstSetAt) return null;
+  const from = Date.parse(workout.firstSetAt);
+  if (!Number.isFinite(from)) return null;
+  const to = workout.finishedAt ? Date.parse(workout.finishedAt) : nowMs;
+  const sec = Math.round((to - from) / 1000);
+  return sec >= 0 ? sec : null;
+}

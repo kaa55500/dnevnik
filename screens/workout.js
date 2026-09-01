@@ -7,7 +7,7 @@ import { todayISO, weekdayShort, isoWeek, weekDays } from '../lib/dates.js';
 import { fmtNum, fmtWeight, fmtDuration, fmtClock, parseNum } from '../lib/format.js';
 import {
   nextSetDefaults, planReps, averageRPE, isControlSet, asksChestSignal,
-  fillModeOf, restForSet, insertExercise, requiredPairs,
+  fillModeOf, restForSet, insertExercise, requiredPairs, workoutElapsed,
 } from './workout-logic.js';
 import { sessionSummary } from '../export.js';
 import { etalonBlock } from './etalon.js';
@@ -111,6 +111,13 @@ function stopTimer() {
   }
 }
 
+function stopClock() {
+  if (state?.clock) {
+    clearInterval(state.clock);
+    state.clock = null;
+  }
+}
+
 function startTimer(seconds, onTick) {
   stopTimer();
   const started = Date.now();
@@ -125,6 +132,8 @@ function startTimer(seconds, onTick) {
       if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
     }
   }, 250);
+  // В браузере метода нет, в Node интервал держит процесс живым.
+  if (state.timer && typeof state.timer.unref === 'function') state.timer.unref();
 }
 
 async function save(box) {
@@ -187,6 +196,7 @@ async function finish(box) {
   workout.finishedAt = new Date().toISOString();
   if (!(await save(box))) return;
   stopTimer();
+  stopClock();
 
   // Кардио-день заводит сессию дня сам: забег — и тест, и нагрузка (R5).
   // Тренировка к этому моменту уже сохранена как закрытая, поэтому сбой
@@ -393,12 +403,12 @@ function finishButton(box) {
 
 function tailNav(box, index, total) {
   const { workout } = state;
+  box.append(el('div', { className: 'wk-rest' }));
   box.append(el('div', { className: 'wk-nav' },
     el('button', {
       textContent: '←', disabled: index === 0,
       onclick: () => { stopTimer(); state.index -= 1; draw(box); },
     }),
-    el('span', { className: 'wk-rest' }),
     el('button', {
       textContent: '→', disabled: index === total - 1,
       onclick: () => { stopTimer(); state.index += 1; draw(box); },
@@ -719,6 +729,9 @@ async function draw(box) {
     }),
     // Режим виден всё время и переспрашивается тапом: заполнение начинают
     // онлайн, а дописывают вечером, и цифра отдыха от этого зависит.
+    workoutElapsed(workout) != null && fillModeOf(workout) === 'live'
+      ? el('div', { className: 'wk-clock', textContent: fmtClock(workoutElapsed(workout)) })
+      : null,
     el('button', {
       className: 'wk-mode',
       textContent: `заполняю ${MODE_RU[fillModeOf(workout)]}`,
@@ -1009,8 +1022,13 @@ async function draw(box) {
         }
 
         ex.sets.push(set);
+        // Метка первого подхода — единственная точка отсчёта тренировки,
+        // которая переживает закрытие приложения.
+        const hadFirst = Boolean(workout.firstSetAt);
+        if (!hadFirst) workout.firstSetAt = new Date().toISOString();
         if (!(await save(box))) {
           ex.sets.pop();
+          if (!hadFirst) workout.firstSetAt = null;
           return;
         }
         // Тумблер залипал: включённый однажды, он метил разминочными все
@@ -1081,17 +1099,19 @@ async function draw(box) {
     box.append(queue);
   }
 
-  const restLabel = el('span', {
+  // Счётчик отдыха стоит своей строкой над кнопками. Внутри строки он забирал
+  // ширину под огромные цифры, и «заметка · замена · пропуск» уезжали вправо
+  // за край экрана ровно в тот момент, когда начинался отдых.
+  box.append(el('div', {
     className: 'wk-rest',
     textContent: state.restLeft ? fmtClock(state.restLeft) : '',
-  });
+  }));
 
   box.append(el('div', { className: 'wk-nav' },
     el('button', {
       textContent: '←', disabled: index === 0,
       onclick: () => { stopTimer(); state.index--; draw(box); },
     }),
-    restLabel,
     el('button', {
       textContent: 'заметка',
       onclick: async () => {
@@ -1177,6 +1197,20 @@ async function draw(box) {
   }
 
   finishButton(box);
+
+  // Часы идут своим тиком: таймер отдыха работает не всё время, а минуты
+  // тренировки должны считаться и в паузах между подходами.
+  stopClock();
+  if (fillModeOf(workout) === 'live' && workout.firstSetAt && workout.status !== 'done') {
+    state.clock = setInterval(() => {
+      const label = box.querySelector('.wk-clock');
+      if (!label) { stopClock(); return; }
+      label.textContent = fmtClock(workoutElapsed(workout));
+    }, 1000);
+    // В браузере метода нет, в Node он держит процесс живым: без этого
+    // прогон тестов не завершается вовсе.
+    if (state.clock && typeof state.clock.unref === 'function') state.clock.unref();
+  }
 }
 
 const KIND_RU = { gym: 'зал', home: 'дом', skill: 'навык', cardio: 'кардио' };
@@ -1392,7 +1426,8 @@ export async function render(box, params = {}) {
     const week = weekRaw || { id: isoWeek(date) };
 
     state = {
-      workout, index: 0, timer: null, restLeft: 0, paramDate: date, showOverview: false,
+      workout, index: 0, timer: null, clock: null, restLeft: 0,
+      paramDate: date, showOverview: false,
       warmup: false, lastSetAt: null, guide, showPlan: false,
       editSet: null, insertAt: null,
       stretch, bonus, day, week,
