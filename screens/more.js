@@ -139,7 +139,7 @@ export async function render(box, params = {}) {
 // ---------------------------------------------------------------
 function menu(box, { weekId, settings, plan, plans }) {
   const grid = el('div', { className: 'tiles' },
-    tile('week', 'Замеры недели', weekId, () => navigate('more', { section: 'week' })),
+    tile('week', 'Замеры недели', weekId, () => navigate('more', { section: 'week', week: weekId })),
     tile('goals', 'Цели и нормы', `${settings.goalWeight} кг · ${settings.goalKcal} ккал`,
       () => navigate('more', { section: 'goals' })),
     tile('guide', 'Справочник', 'техника и эталоны',
@@ -334,14 +334,16 @@ async function sectionData(box, { settings, plan, plans, weekId }) {
 
   // Версию знает сам worker: в коде страницы её нет, и подделать нечем.
   if (navigator.serviceWorker?.controller) {
-    const ch = new MessageChannel();
-    ch.port1.onmessage = (m) => {
-      verValue.textContent = String(m.data?.version || '—');
+    // Worker отвечает через `e.source.postMessage`, поэтому канал был мёртв,
+    // а слушатель вешался заново при каждом заходе в раздел и держал ссылку
+    // на оторванный узел. Слушаем один раз и снимаем сразу после ответа.
+    const onVersion = (m) => {
+      if (!m.data || !m.data.version) return;
+      verValue.textContent = String(m.data.version);
+      navigator.serviceWorker.removeEventListener('message', onVersion);
     };
-    navigator.serviceWorker.controller.postMessage('version', [ch.port2]);
-    navigator.serviceWorker.addEventListener('message', (m) => {
-      if (m.data?.version) verValue.textContent = String(m.data.version);
-    });
+    navigator.serviceWorker.addEventListener('message', onVersion);
+    navigator.serviceWorker.controller.postMessage('version');
   } else {
     verValue.textContent = 'без service worker';
   }

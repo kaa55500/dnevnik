@@ -71,8 +71,10 @@ export async function render(box, params = {}) {
     .map((w) => ({ kind: w.kind || 'gym', code: w.dayCode || '' }));
   // Сессии, уехавшие с этой даты на другую: план их здесь ждёт, а сделаны
   // они не здесь — долгом такое висеть не должно.
+  // Только закрытая тренировка считается сделанной не здесь. Брошенный
+  // черновик переноса снимал долг с плановой даты, хотя в нём ноль подходов.
   const movedAway = workouts
-    .filter((w) => w.movedFrom === date)
+    .filter((w) => w.movedFrom === date && w.status === 'done')
     .map((w) => ({ kind: w.kind || 'gym', code: w.dayCode || '', date: w.date }));
 
   // Пометка «задним числом» относится к дню, а не к неделе: у недельной
@@ -213,6 +215,8 @@ export async function render(box, params = {}) {
     if (t.skipped) {
       card.append(el('p', { className: 'hint', textContent: 'Отмечено «не делал».' }));
       card.append(skipButton(t));
+      // Прочерк поверх записанной цифры прятал её: вес оставался в базе
+      // и печатался в журнале, а на экране дня его было не видно и не поправить.
       return card;
     }
 
@@ -374,8 +378,9 @@ export async function render(box, params = {}) {
         // Двойной тап заводил вторую запись с тем же ключом: `findWorkout`
         // возвращает первую, вторую нельзя ни открыть, ни удалить — она висит
         // в журнале пустой сессией «Нnull · черновик».
-        if (e.target.disabled) return;
-        e.target.disabled = true;
+        const btn = e && e.target;
+        if (btn && btn.disabled) return;
+        if (btn) btn.disabled = true;
         try {
           const w = makeUnplannedWorkout(date, kind, weekOf(plan, date), today);
           const clash = await findWorkout(date, kind, w.dayCode);
@@ -386,7 +391,7 @@ export async function render(box, params = {}) {
           w.id = await putWorkout(w);
           navigate('workout', { date, kind, code: w.dayCode });
         } catch (err) {
-          e.target.disabled = false;
+          if (btn) btn.disabled = false;
           errorLine(box, err);
         }
       },

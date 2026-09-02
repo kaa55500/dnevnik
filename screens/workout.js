@@ -7,7 +7,7 @@ import { todayISO, weekdayShort, isoWeek, weekDays } from '../lib/dates.js';
 import { fmtNum, fmtWeight, fmtDuration, fmtClock, parseNum } from '../lib/format.js';
 import {
   nextSetDefaults, planReps, averageRPE, isControlSet, asksChestSignal,
-  fillModeOf, restForSet, insertExercise, requiredPairs, workoutElapsed,
+  fillModeOf, restForSet, insertExercise, requiredPairs, workoutElapsed, cardioType,
 } from './workout-logic.js';
 import { sessionSummary } from '../export.js';
 import { etalonBlock } from './etalon.js';
@@ -111,6 +111,22 @@ function stopTimer() {
   }
 }
 
+/**
+ * Уход с экрана: гасим оба таймера и сохраняем растяжку. Часы висели
+ * осиротевшим интервалом — `stopClock` смотрит на `state?.clock`, а `state`
+ * к тому моменту уже null, и тик продолжал раз в секунду писать время
+ * прошлой тренировки в часы следующей. Отметки растяжки при этом жили
+ * только в памяти и пропадали молча, в отличие от подходов.
+ */
+async function leave() {
+  stopTimer();
+  stopClock();
+  try {
+    await persistStretch();
+  } catch { /* уход не должен упираться в отказ записи */ }
+  state = null;
+}
+
 function stopClock() {
   if (state?.clock) {
     clearInterval(state.clock);
@@ -173,9 +189,10 @@ function stepper(input, delta) {
  */
 async function persistStretch() {
   if (!state || !state.stretch) return;
-  const marked = Object.values(state.marks || {}).some(Boolean);
-  const timed = Object.values(state.secs || {}).some((v) => v != null);
-  if (!marked && !timed) return;
+  // Раньше пустое состояние молча выходило до записи: снял все галочки,
+  // нажал «Сохранить блок», кнопка написала «Записано», в дне ничего
+  // не изменилось. Пишем всегда, когда блок этого дня открывали.
+  if (!state.stretch) return;
   const iso = state.workout.date;
   const fresh = (await getDay(iso)) || { date: iso };
   fresh.stretch = { ...(fresh.stretch || {}), ...state.marks };
@@ -197,7 +214,9 @@ async function finish(box) {
   }
   workout.avgRPE = averageRPE(workout);
   workout.status = 'done';
-  workout.finishedAt = new Date().toISOString();
+  // Повторное ЗАВЕРШИТЬ на переоткрытой сессии переписывало время окончания,
+  // и часы печатали сутки: 1440:00 при отсчёте от первого подхода.
+  if (!workout.finishedAt) workout.finishedAt = new Date().toISOString();
   if (!(await save(box))) return;
   stopTimer();
   stopClock();
@@ -288,7 +307,7 @@ async function logCardioFromWorkout(workout) {
   const set = (ex.sets || [])[0];
   if (!set) return;
   day.cardio.push({
-    type: 'бег',
+    type: cardioType(workout),
     minutes: set.minutes ?? null,
     hr: set.hr ?? null,
     km: set.km ?? null,
@@ -353,7 +372,8 @@ async function drawStretch(box) {
   const hint = warmupHint(stretch, homeDone);
   if (hint) box.append(el('p', { className: 'hint', textContent: hint }));
 
-  box.append(stretchList(stretch.positions, guide, marks, secs));
+  box.append(stretchList(stretch.positions, guide, marks, secs,
+    () => { persistStretch().catch(() => {}); }));
 
   const splitInput = stretch.measureSplit
     ? el('input', { type: 'number', step: '0.5', inputMode: 'decimal', value: week.splitGap ?? '' })
@@ -392,7 +412,6 @@ async function drawStretch(box) {
   }));
 }
 
-/** Стрелки и завершение для шагов хвоста — без заметки, замены и пропуска. */
 /** Кнопка завершения. Бонус и внеплановое в счётчик не входят. */
 function finishButton(box) {
   const { workout } = state;
@@ -420,7 +439,7 @@ function tailNav(box, index, total) {
 
   box.append(el('button', {
     className: 'back', textContent: '← другая сессия',
-    onclick: () => { stopTimer(); state = null; navigate('workout', {}); },
+    onclick: () => { leave(); navigate('workout', {}); },
   }));
 
   finishButton(box);
@@ -453,9 +472,10 @@ async function drawOverview(box) {
       el('span', { className: 'plan-name', textContent: e.name }),
       el('span', {
         className: 'plan-dose',
-        textContent: `${p.sets}×${p.reps}`
-          + (p.rpe != null ? ` @${fmtNum(p.rpe, 1)}` : '')
-          + (p.weight ? ` · ${p.weight}` : ''),
+        textContent: (p.unplanned || e.unplanned) ? 'вне плана'
+          : `${p.sets}×${p.reps}`
+            + (p.rpe != null ? ` @${fmtNum(p.rpe, 1)}` : '')
+            + (p.weight ? ` · ${p.weight}` : ''),
       }))));
   });
   box.append(list);
@@ -477,7 +497,12 @@ async function drawOverview(box) {
   const card = el('div', { className: 'group-card' });
   const pick = (title, hint, mode) => el('button', {
     className: 'group-row',
-    onclick: async () => {
+    onclick: async (e) => {
+      // Двойной тап заводил две записи: `id` присваивается только после
+      // `await putWorkout`, и второй вызов уходил с объектом без него.
+      const btn = e && e.target;
+      if (btn && btn.disabled) return;
+      if (btn) btn.disabled = true;
       workout.fillMode = mode;
       state.showOverview = false;
       if (!(await save(box))) return;
@@ -538,8 +563,11 @@ async function drawOverview(box) {
       return;
     }
 
+    // У сессии вне плана плановой даты нет вовсе: записывать «перенос с»
+    // значило бы рисовать на прежней дате карточку о тренировке, которая
+    // там никогда не планировалась.
     const planned = workout.movedFrom || workout.date;
-    workout.movedFrom = v === planned ? null : planned;
+    workout.movedFrom = (workout.unplannedSession || v === planned) ? null : planned;
     workout.date = v;
     workout.backdated = v !== todayISO();
     if (workout.id != null && !(await save(box))) return;
@@ -712,7 +740,7 @@ async function draw(box) {
 
     box.append(el('button', {
       className: 'back', textContent: '← другая сессия',
-      onclick: () => { stopTimer(); state = null; navigate('workout', {}); },
+      onclick: () => { leave(); navigate('workout', {}); },
     }));
     box.append(el('button', {
       className: 'back danger', textContent: 'отменить заполнение',
@@ -939,7 +967,10 @@ async function draw(box) {
           textContent: '×',
           title: 'удалить подход',
           onclick: async () => {
-            if (!confirm(`Удалить подход ${i + 1}: ${text}?`)) return;
+            // Номер берётся с экрана: после сортировки разминочных наверх
+            // индекс в базе и строка в списке — разные числа, и диалог
+            // называл чужой подход.
+            if (!confirm(`Удалить подход ${pos + 1}: ${text}?`)) return;
             const removed = ex.sets.splice(i, 1)[0];
             if (!(await save(box))) {
               ex.sets.splice(i, 0, removed);
@@ -961,6 +992,13 @@ async function draw(box) {
     // Правка записанного: тап по строке подхода подставляет его в форму.
     // Раньше ошибку можно было только удалить и записать заново.
     const editing = state.editSet != null && ex.sets[state.editSet] ? ex.sets[state.editSet] : null;
+    // Позиция правимого подхода на экране: список отсортирован разминочными
+    // наверх, и номер в базе с номером в списке не совпадает.
+    const editingPos = editing
+      ? ex.sets.map((x, k) => ({ x, k }))
+        .sort((a, b) => Number(Boolean(b.x.warmup)) - Number(Boolean(a.x.warmup)))
+        .findIndex(({ k }) => k === state.editSet)
+      : -1;
     const d = editing || nextSetDefaults(presc, ex.sets, history);
     const weightLabel = cardio ? 'минуты' : (presc.perSide ? 'вес на сторону' : 'вес');
     const repsLabel = cardio ? 'км' : 'повт';
@@ -1042,7 +1080,7 @@ async function draw(box) {
     box.append(el('div', { className: 'wk-actions' }, warmToggle, el('button', {
       className: 'wk-add' + (editing ? ' editing' : ''),
       textContent: editing
-        ? `СОХРАНИТЬ ПОДХОД ${state.editSet + 1}`
+        ? `СОХРАНИТЬ ПОДХОД ${editingPos + 1}`
         : (workingSets >= planned && planned > 0
           ? `ЗАПИСАТЬ ЛИШНИЙ ПОДХОД (${workingSets + 1})`
           : `ЗАПИСАТЬ ПОДХОД ${ex.sets.length + 1}`),
@@ -1150,8 +1188,15 @@ async function draw(box) {
     const e = workout.exercises[i];
     const p = workout.prescription[i] || {};
     const done = (e.sets || []).filter((x) => !x.warmup).length;
-    if (e.skipped || (p.sets > 0 && done >= p.sets)) continue;
-    ahead.push({ i, name: e.replacedWith || e.name, dose: `${p.sets}×${p.reps}` });
+    const free = Boolean(p.unplanned || e.unplanned);
+    // У внепланового плана нет, и `p.sets` там ноль: очередь звала его
+    // до конца сессии и печатала «0×—». Закрытым считаем по факту работы.
+    if (e.skipped || (free ? done > 0 : (p.sets > 0 && done >= p.sets))) continue;
+    ahead.push({
+      i,
+      name: e.replacedWith || e.name,
+      dose: free ? 'вне плана' : `${p.sets}×${p.reps}`,
+    });
   }
   // Хвост попадает в очередь наравне с упражнениями: иначе блок 120 %
   // и растяжка не видны до самого конца и делаются «когда вспомнишь».
@@ -1250,7 +1295,7 @@ async function draw(box) {
 
   box.append(el('button', {
     className: 'back', textContent: '← другая сессия',
-    onclick: () => { stopTimer(); state = null; navigate('workout', {}); },
+    onclick: () => { leave(); navigate('workout', {}); },
   }));
 
   // Обратный путь есть у любой записи, не только у черновика. Ошибочно

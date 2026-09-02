@@ -175,3 +175,20 @@ export function workoutElapsed(workout, nowMs = Date.now()) {
   const sec = Math.round((to - from) / 1000);
   return sec >= 0 ? sec : null;
 }
+
+/** Виды кардио, которые понимает экран дня. */
+const CARDIO_TYPES = ['ходьба', 'гребля', 'ски-эрг', 'бег', 'air bike', 'велосипед'];
+
+/**
+ * Вид кардио по названию упражнения. Раньше в день жёстко писался «бег»,
+ * и гребля попадала в журнал бегом — а бег в наборе запрещён правилом 7,
+ * то есть метрика читалась бы как нарушение.
+ */
+export function cardioType(workout) {
+  const hay = [
+    ((workout.exercises || [])[0] || {}).name,
+    workout.title,
+    workout.dayCode,
+  ].filter(Boolean).join(' ').toLowerCase();
+  return CARDIO_TYPES.find((t) => hay.includes(t)) || 'кардио';
+}

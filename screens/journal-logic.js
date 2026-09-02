@@ -213,6 +213,24 @@ export function dayRecord(iso, ctx) {
   const mob = mobilitySession(iso, day, ctx.plans);
   if (mob) sessions.push(mob);
 
+  // Прочерк доходит до записи дня. Отметка «не делал» жила только в списке
+  // задач: в журнале она по-прежнему выглядела молчанием, то есть цена
+  // правки была заплачена, а результат до канала разбора не дошёл.
+  const SKIP_RU = {
+    morning: 'утренний чек-ин',
+    evening: 'ходьба и кардио',
+    mobility: 'растяжка',
+    waist: 'талия',
+    splitGap: 'просвет шпагата',
+    week: 'недельные замеры',
+  };
+  const skipLabel = (key) => SKIP_RU[key]
+    || (key.includes('|') ? (key.split('|')[1] || KIND_RU[key.split('|')[0]] || key) : key);
+  const skipped = [
+    ...Object.entries((day && day.skipped) || {}),
+    ...Object.entries((week && week.skipped) || {}),
+  ].filter(([, v]) => v).map(([k]) => skipLabel(k)).sort();
+
   const morning = morningRows(day, ctx.settings);
   const evening = eveningRows(day);
   const weekly = weekRows(iso, week);
@@ -226,8 +244,10 @@ export function dayRecord(iso, ctx) {
     sessions,
     evening,
     weekly,
+    skipped,
     empty: !sessions.length && !morning.length && !evening.length
-      && !weekly.length && !(day && has(day.weight)) && !(day && day.note),
+      && !weekly.length && !skipped.length
+      && !(day && has(day.weight)) && !(day && day.note),
   };
 }
 

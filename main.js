@@ -93,10 +93,21 @@ if ('serviceWorker' in navigator) {
       return;
     }
     if (document.querySelector('.updated')) return;
-    const note = document.createElement('button');
+    // Плашка закрывается: она `position: fixed` над таб-баром, то есть ровно
+    // там, где ЗАВЕРШИТЬ и «отменить заполнение». Висеть до конца тренировки
+    // и ловить случайный тап (а тап — это перезагрузка) она не должна.
+    const note = document.createElement('div');
     note.className = 'updated';
-    note.textContent = 'Новая версия готова — открыть';
-    note.onclick = () => location.reload();
+    const go = document.createElement('button');
+    go.className = 'updated-go';
+    go.textContent = 'Новая версия готова — открыть';
+    go.onclick = () => location.reload();
+    const hide = document.createElement('button');
+    hide.className = 'updated-hide';
+    hide.textContent = '×';
+    hide.title = 'скрыть';
+    hide.onclick = () => note.remove();
+    note.append(go, hide);
     document.body.append(note);
   });
 }

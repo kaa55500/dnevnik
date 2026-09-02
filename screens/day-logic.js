@@ -42,26 +42,40 @@ function allTasks(ctx) {
   // Ключ сессии — вид плюс код дня. После переноса на одной дате могут
   // лежать два зальных дня, и по одному виду закрытость читалась ложно:
   // приехавший Н1 закрывал плановый В2.
-  const doneKeys = new Set((ctx.doneKinds || []).map(
-    (x) => (typeof x === 'string' ? x : `${x.kind}|${x.code || ''}`)));
+  const doneKeys = new Set();
+  for (const x of ctx.doneKinds || []) {
+    if (typeof x === 'string') { doneKeys.add(x); continue; }
+    doneKeys.add(`${x.kind}|${x.code || ''}`);
+    // Запись без кода дня (создана до 01.09 или приехала чужим бэкапом)
+    // обязана закрывать сессию своего вида: иначе уже сделанная тренировка
+    // копит вечный долг.
+    if (!x.code) doneKeys.add(x.kind);
+  }
   const closedSession = (s) => doneKeys.has(`${s.kind}|${s.code || ''}`)
     || doneKeys.has(s.kind);
   const tasks = [];
 
+  // Вес и сон — обе обязательные строки: сон несущая переменная режима
+  // и первое условие допуска к добору 120 %. Раньше чек-ин закрывался
+  // одним весом, и день без сна показывал «Всё закрыто» навсегда.
   tasks.push({
     key: 'morning', title: 'Утренний чек-ин', required: true,
-    done: !empty(d.weight) || isSkipped('morning'),
+    done: (!empty(d.weight) && !empty(d.sleepHours)) || isSkipped('morning'),
     skipped: isSkipped('morning'),
   });
 
   // Тренировка, перенесённая на другой день, в этот день долгом не висит:
   // она сделана, просто не здесь. Без этого плановая дата копила бы вечный
   // долг по сессии, которая уже в журнале.
-  const movedAway = new Map((ctx.movedAway || []).map((m) => [m.kind, m.date]));
+  // Ключ с кодом дня: два зальных дня на одной дате иначе схлопнутся,
+  // и перенос одного закрыл бы второй.
+  const movedAway = new Map(
+    (ctx.movedAway || []).map((m) => [`${m.kind}|${m.code || ''}`, m.date]));
 
   for (const s of sessions) {
     if (s.kind === 'mobility') continue;
-    const movedTo = movedAway.get(s.kind) || null;
+    const movedTo = movedAway.get(`${s.kind}|${s.code || ''}`)
+      || movedAway.get(`${s.kind}|`) || null;
     tasks.push({
       key: s.kind,
       title: s.kind === 'home' ? 'Домашняя сессия' : s.title || s.code,
@@ -159,7 +173,10 @@ export function debts(ctx) {
 
     const ds = d.skipped || {};
     const ws = w.skipped || {};
-    if (empty(d.weight) && !ds.morning) out.push({ date, key: 'morning', title: 'вес' });
+    if (!ds.morning) {
+      if (empty(d.weight)) out.push({ date, key: 'morning', title: 'вес' });
+      if (empty(d.sleepHours)) out.push({ date, key: 'morning', title: 'сон' });
+    }
     if (weekday(date) === TUE && empty(w.splitGap) && !ws.splitGap) {
       out.push({ date, key: 'splitGap', title: 'просвет шпагата' });
     }

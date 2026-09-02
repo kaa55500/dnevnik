@@ -60,7 +60,7 @@ export function plannedSeconds(dose) {
  * стоит «сколько простоял». Без цифры недельная доза удержаний неизвестна,
  * а её потолок — 10 минут на группу (Ingram 2025, запись 36).
  */
-export function stretchList(positions, guide, marks, secs = {}) {
+export function stretchList(positions, guide, marks, secs = {}, onChange = null) {
   const list = el('ol', { className: 'stretch' });
   for (const p of positions) {
     const planned = plannedSeconds(p.dose);
@@ -76,8 +76,17 @@ export function stretchList(positions, guide, marks, secs = {}) {
       if (input.checked && sec && sec.value === '') sec.value = String(planned);
       if (!input.checked && sec) sec.value = '';
       if (sec) secs[p.n] = sec.value === '' ? null : Number(sec.value);
+      // Отметка сохраняется сразу, как подход. Раньше она жила только
+      // в памяти до «Сохранить блок»: уход с экрана или перезагрузка
+      // теряли её молча, и шесть отмеченных позиций превращались в ноль.
+      if (onChange) onChange();
     };
-    if (sec) sec.onchange = () => { secs[p.n] = sec.value === '' ? null : Number(sec.value); };
+    if (sec) {
+      sec.onchange = () => {
+        secs[p.n] = sec.value === '' ? null : Number(sec.value);
+        if (onChange) onChange();
+      };
+    }
 
     // Признак сверки раскрыт сразу: в блоке растяжки форма и есть вся задача,
     // прятать её за тапом значит прятать смысл позиции.
