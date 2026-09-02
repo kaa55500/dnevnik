@@ -146,10 +146,13 @@ export function sessionFor(plan, iso, kind, code = null) {
   const hit = dayForDate(plan, iso);
   if (!hit) return null;
   const list = hit.day.sessions || [];
-  // Код дня главнее вида: после переноса на одной дате может оказаться
-  // два зальных дня, и по одному лишь виду они неразличимы.
-  const s = (code && list.find((x) => x.kind === kind && x.code === code))
-    || list.find((x) => x.kind === kind);
+  // Код дня, если он задан, — точное совпадение или ничего. Фолбэк на первый
+  // день того же вида отдавал чужую сессию: перенесённая Н1, открытая 04.09,
+  // получала bonus от В2 и дописывала его себе в базу, а внеплановая «Силовая»
+  // приезжала не пустой и потому не показывала кнопку «+ упражнение».
+  const s = code
+    ? list.find((x) => x.kind === kind && x.code === code)
+    : list.find((x) => x.kind === kind);
   return s ? { week: hit.week, day: hit.day, session: s } : null;
 }
 

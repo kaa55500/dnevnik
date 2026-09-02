@@ -1,5 +1,5 @@
 import {
-  getDay, putDay, getWeek, putWeek, getPlan, getSettings, listWorkouts, putWorkout, listDays, listWeeks,
+  getDay, putDay, getWeek, putWeek, getPlan, getSettings, listWorkouts, putWorkout, findWorkout, listDays, listWeeks,
 } from '../store.js';
 import { sessionsFor, weekOf, sessionDates, planRange } from '../plan.js';
 import { plannedSeconds } from './stretch-block.js';
@@ -370,12 +370,23 @@ export async function render(box, params = {}) {
   for (const kind of ['gym', 'skill', 'home', 'cardio']) {
     kinds.append(el('button', {
       className: 'group-row',
-      onclick: async () => {
+      onclick: async (e) => {
+        // Двойной тап заводил вторую запись с тем же ключом: `findWorkout`
+        // возвращает первую, вторую нельзя ни открыть, ни удалить — она висит
+        // в журнале пустой сессией «Нnull · черновик».
+        if (e.target.disabled) return;
+        e.target.disabled = true;
         try {
           const w = makeUnplannedWorkout(date, kind, weekOf(plan, date), today);
+          const clash = await findWorkout(date, kind, w.dayCode);
+          if (clash) {
+            navigate('workout', { date, kind, code: w.dayCode });
+            return;
+          }
           w.id = await putWorkout(w);
           navigate('workout', { date, kind, code: w.dayCode });
         } catch (err) {
+          e.target.disabled = false;
           errorLine(box, err);
         }
       },

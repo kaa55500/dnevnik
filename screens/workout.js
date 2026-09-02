@@ -138,6 +138,10 @@ function startTimer(seconds, onTick) {
 
 async function save(box) {
   try {
+    // Дописанный в закрытую сессию подход обязан менять средний RPE: на нём
+    // стоит сигнал пересборки (правило 4, две сессии подряд с отклонением
+    // ≥ 1,5), и он читал бы цифру, посчитанную до дописывания.
+    if (state.workout.status === 'done') state.workout.avgRPE = averageRPE(state.workout);
     const id = await putWorkout(state.workout);
     // Первое сохранение заводит запись: до выбора режима её в базе нет.
     if (state.workout.id == null) state.workout.id = id;
@@ -322,7 +326,7 @@ function bonusBanner(box) {
     const b = el('button', {
       className: 'bonus-banner' + (done ? ' taken' : ''),
       disabled: at < 0,
-      onclick: () => { if (at >= 0) { stopTimer(); state.index = at; draw(box); } },
+      onclick: () => { if (at >= 0) return goTo(box, at); return undefined; },
     },
     el('span', { className: 'plus-badge', textContent: 'БОНУС 120 %' }),
     el('span', { className: 'bonus-name', textContent: bonus.name }),
@@ -407,11 +411,11 @@ function tailNav(box, index, total) {
   box.append(el('div', { className: 'wk-nav' },
     el('button', {
       textContent: '←', disabled: index === 0,
-      onclick: () => { stopTimer(); state.index -= 1; draw(box); },
+      onclick: () => goTo(box, state.index - 1),
     }),
     el('button', {
       textContent: '→', disabled: index === total - 1,
-      onclick: () => { stopTimer(); state.index += 1; draw(box); },
+      onclick: () => goTo(box, state.index + 1),
     })));
 
   box.append(el('button', {
@@ -507,12 +511,57 @@ async function drawOverview(box) {
   dateIn.onchange = async () => {
     const v = dateIn.value;
     if (!v || v === workout.date) return;
-    // Плановая дата — та, что стояла в плане, а не предыдущая правка.
+
+    // На новой дате уже может лежать эта же сессия. Вторая запись с тем же
+    // ключом не создаёт конфликта на экране, но `findWorkout` отдаёт черновик
+    // раньше закрытой, и закрытая тренировка становится недоступна навсегда.
+    const clash = await findWorkout(v, workout.kind, workout.dayCode);
+    if (clash && clash.id !== workout.id) {
+      dateIn.value = workout.date;
+      box.prepend(el('div', {
+        className: 'error',
+        textContent: `На ${v.slice(8)}.${v.slice(5, 7)} уже есть ${workout.dayCode}`
+          + ` (${clash.status === 'done' ? 'записана' : 'черновик'}).`
+          + ' Открой её и удали, если она лишняя.',
+      }));
+      return;
+    }
+
+    // Отметки растяжки принадлежат прежнему дню. Сохранить их надо до смены
+    // даты: `persistStretch` пишет в `state.workout.date`, и после смены они
+    // уехали бы в новый день — растяжка, которой там не было, появлялась
+    // из ниоткуда, а недельная доза удержаний завышалась.
+    try {
+      await persistStretch();
+    } catch (err) {
+      box.prepend(el('div', { className: 'error', textContent: 'Блок растяжки не сохранён: ' + err.message }));
+      return;
+    }
+
     const planned = workout.movedFrom || workout.date;
     workout.movedFrom = v === planned ? null : planned;
     workout.date = v;
     workout.backdated = v !== todayISO();
     if (workout.id != null && !(await save(box))) return;
+
+    // Состояние, привязанное к дню, пересобирается целиком: блок растяжки,
+    // отметки, секунды, неделя и признак домашней сессии были снимком старой
+    // даты, а `state` при смене даты не пересоздаётся — navigate не делается.
+    const [planNow, dayRaw, weekRaw, allW] = await Promise.all([
+      getPlan(v), getDay(v), getWeek(isoWeek(v)), listWorkouts(),
+    ]);
+    const mob = sessionFor(planNow, v, 'mobility');
+    state.stretch = mob ? mob.session : null;
+    state.extras = extraSteps(state.stretch);
+    state.day = dayRaw || { date: v };
+    state.week = weekRaw || { id: isoWeek(v) };
+    state.marks = { ...(state.day.stretch || {}) };
+    state.secs = { ...(state.day.stretchSec || {}) };
+    state.homeDone = allW.some(
+      (w) => w.date === v && w.kind === 'home' && w.status === 'done');
+    state.index = Math.min(state.index, workout.exercises.length + state.extras.length - 1);
+    if (state.index < 0) state.index = 0;
+
     await draw(box);
   };
   box.append(el('div', { className: 'move-row' }, dateIn));
@@ -543,6 +592,23 @@ async function drawOverview(box) {
 const MODE_RU = { live: 'сейчас', later: 'потом' };
 
 /**
+ * Переход на другое упражнение. Режимы формы обязаны сбрасываться здесь,
+ * а не «сами»: `editSet` и `warmup` переживали переход и относились уже
+ * к чужому упражнению. Тап по подходу в тяге, стрелка на жим — и сохранение
+ * переписывало первый подход жима вместо записи нового. Разминочный тумблер
+ * тем же путём метил рабочий подход разминкой, а такой подход выпадает
+ * из объёма, из среднего RPE и из записи дня целиком.
+ */
+function goTo(box, index) {
+  stopTimer();
+  state.index = index;
+  state.editSet = null;
+  state.warmup = false;
+  state.insertAt = null;
+  return draw(box);
+}
+
+/**
  * Выбор упражнения вне плана. Имя берётся из справочника, а не набирается:
  * своды объёма и цели ключуются по имени, и опечатка тихо выносит упражнение
  * из аналитики. Свободный ввод остаётся запасным путём.
@@ -567,7 +633,7 @@ function exercisePicker(box) {
     state.insertAt = null;
     state.showPlan = false;
     state.index = i;
-    draw(box);
+    return draw(box);
   };
 
   const typed = () => String(search.value || '').trim();
@@ -796,7 +862,7 @@ async function draw(box) {
       const li = el('li', { className: i === index ? 'now' : (sets || e.skipped ? 'done' : '') });
       li.append(el('button', {
         className: 'plan-row',
-        onclick: () => { stopTimer(); state.index = i; state.showPlan = false; return draw(box); },
+        onclick: () => { state.showPlan = false; return goTo(box, i); },
       },
       el('span', { className: 'plan-name', textContent: e.replacedWith || e.name }),
       el('span', {
@@ -901,27 +967,34 @@ async function draw(box) {
     // У упражнений с весом тела поле веса пустует и мешает: шаг ±1,25 к нему
     // не относится. Показываем по требованию — жилет и пояс никуда не делись.
     const bodyweight = !cardio && d.weight == null && !presc.perSide;
+    // У кардио время и дистанция лежат в minutes/km, а не в weight/reps.
+    // Правка забега открывалась с пустыми полями и сохраняла в них null —
+    // время и километры стирались, а logCardioFromWorkout разносил нули в день.
     const wInput = el('input', {
       type: 'number', step: cardio ? '0.5' : '1.25', inputMode: 'decimal',
-      value: d.weight ?? '', className: 'wk-w',
+      value: (cardio ? d.minutes : d.weight) ?? '', className: 'wk-w',
     });
     const rInput = el('input', {
       type: 'number', step: cardio ? '0.1' : '1', inputMode: 'decimal',
-      value: d.reps ?? '', className: 'wk-r',
+      value: (cardio ? d.km : d.reps) ?? '', className: 'wk-r',
     });
     // Навыкам RPE не ставится: критерий — распад техники, а не усилие.
     // Кардио вместо RPE пишет средний пульс — правило «каждая сессия: тип,
     // время, средний пульс».
-    const asksRPE = cardio || presc.rpe != null;
+    // Внеплановому упражнению RPE нужен наравне с плановым: механизм
+    // «навыкам RPE не ставится» случайно распространялся на любую внеплановую
+    // работу, и доделанный жим записывался как навык, без обязательной строки.
+    const asksRPE = cardio || presc.rpe != null || presc.unplanned || ex.unplanned;
     const rpeInput = asksRPE ? el('input', {
       type: 'number', step: cardio ? '1' : '0.5', inputMode: 'decimal',
       value: cardio ? (d.hr ?? '') : (d.rpe ?? ''), className: 'wk-rpe',
     }) : null;
     // Отдых руками: в режиме «потом» он единственный источник цифры,
     // в режиме «сейчас» — способ поправить измеренное.
+    const restWas = editing && editing.rest != null ? String(editing.rest) : '';
     const restInput = cardio ? null : el('input', {
       type: 'number', step: '5', inputMode: 'numeric', className: 'wk-restin',
-      value: editing && editing.rest != null ? editing.rest : '',
+      value: restWas,
       placeholder: mode === 'live' ? 'по секундомеру' : 'не записан',
     });
 
@@ -975,7 +1048,13 @@ async function draw(box) {
           : `ЗАПИСАТЬ ПОДХОД ${ex.sets.length + 1}`),
       onclick: async () => {
         const warmup = state.warmup;
-        const manual = restInput ? parseNum(restInput.value) : null;
+        // Ручным отдых считается, только когда поле реально тронули. Раньше
+        // оно предзаполнялось измеренным значением, поэтому `manual` был
+        // непустым всегда, и любая правка повторов помечала измеренный отдых
+        // вспомненным — ровно то разделение, ради которого он и заводился.
+        const restNow = restInput ? String(restInput.value ?? '') : '';
+        const restTouched = Boolean(restInput) && restNow !== restWas;
+        const manual = restTouched ? parseNum(restNow) : null;
         const { rest, restManual } = restForSet({
           mode, lastSetAt: state.lastSetAt, now: Date.now(), manual,
         });
@@ -1002,14 +1081,20 @@ async function draw(box) {
         if (editing) {
           const i = state.editSet;
           const before = ex.sets[i];
-          // Правка не трогает измеренный отдых и метку контрольного подхода:
-          // они относятся к моменту записи, а не к введённым цифрам.
+          // Правка не трогает ни измеренный отдых, ни метку контрольного
+          // подхода: они относятся к моменту записи, а не к введённым цифрам.
+          // Тронутое поле отдыха при этом слушается в обе стороны — очищенное
+          // стирает цифру, иначе ошибочные 900 секунд было не убрать.
+          const restPatch = !restTouched ? {}
+            : (manual == null
+              ? { rest: null, restManual: undefined }
+              : { rest: set.rest, restManual: true });
           ex.sets[i] = {
             ...before,
             weight: set.weight, reps: set.reps, rpe: set.rpe,
             minutes: set.minutes, km: set.km, hr: set.hr,
             warmup: set.warmup,
-            ...(manual != null ? { rest: set.rest, restManual: true } : {}),
+            ...restPatch,
           };
           if (!(await save(box))) {
             ex.sets[i] = before;
@@ -1089,7 +1174,7 @@ async function draw(box) {
     for (const a of ahead) {
       card.append(el('button', {
         className: 'group-row',
-        onclick: () => { stopTimer(); state.index = a.i; return draw(box); },
+        onclick: () => goTo(box, a.i),
       },
       el('span', { className: 'row-title', textContent: a.name }),
       el('span', { className: 'row-value', textContent: a.dose }),
@@ -1110,7 +1195,7 @@ async function draw(box) {
   box.append(el('div', { className: 'wk-nav' },
     el('button', {
       textContent: '←', disabled: index === 0,
-      onclick: () => { stopTimer(); state.index--; draw(box); },
+      onclick: () => goTo(box, state.index - 1),
     }),
     el('button', {
       textContent: 'заметка',
@@ -1145,7 +1230,7 @@ async function draw(box) {
       textContent: '→',
       className: ready && !last ? 'ready' : '',
       disabled: last,
-      onclick: () => { stopTimer(); state.index++; draw(box); },
+      onclick: () => goTo(box, state.index + 1),
     }),
   ));
 
