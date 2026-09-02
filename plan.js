@@ -257,6 +257,27 @@ export function mevFor(plan, settings) {
 }
 
 /**
+ * Норма питания: план цикла главный, настройка — запасной вариант.
+ *
+ * Раньше экран печатал только `settings.goalKcal`, а блок `nutrition` в плане
+ * не читал никто. Дефолт 2380 остался от Ц2 и провисел весь Ц3 при плановых
+ * 2300 — то есть приложение показывало норму на 80 ккал выше, 560 ккал
+ * в неделю мимо, ровно в фазе, где ккал единственный рычаг. Целевой вес
+ * такую же развилку уже решает в пользу плана; здесь то же правило.
+ */
+export function nutritionFor(plan, settings) {
+  const n = (plan && plan.nutrition) || {};
+  const s = settings || {};
+  return {
+    kcal: n.kcal != null ? n.kcal : s.goalKcal,
+    protein: n.protein != null ? n.protein : s.goalProtein,
+    fat: n.fat,
+    carbs: n.carbs,
+    fromPlan: n.kcal != null,
+  };
+}
+
+/**
  * Целевые пороги цикла с учётом ручного перекрытия. Перекрытие живёт,
  * пока активен тот же цикл: новый план забирает пороги себе (R25).
  */

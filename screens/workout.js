@@ -8,8 +8,10 @@ import { fmtNum, fmtWeight, fmtDuration, fmtClock, parseNum } from '../lib/forma
 import {
   nextSetDefaults, planReps, averageRPE, isControlSet, asksChestSignal,
   fillModeOf, restForSet, insertExercise, requiredPairs, workoutElapsed, cardioType,
+  prescriptionFor, exerciseClosed, orderedSets,
 } from './workout-logic.js';
 import { sessionSummary } from '../export.js';
+import { KIND_RU } from './day-logic.js';
 import { etalonBlock } from './etalon.js';
 import { stretchList, warmupHint, splitHint, applySplit } from './stretch-block.js';
 import { navigate } from '../main.js';
@@ -68,7 +70,16 @@ async function movableSessions(date) {
  */
 function makeWorkout(date, hit, moved = null) {
   const { week, session } = hit;
-  const rpes = session.exercises.map((e) => e.rpe).filter((v) => v != null);
+  // Плановый RPE взвешивается подходами, а не упражнениями, и бонус в него
+  // не входит. Иначе сравнение с фактическим — среднее по подходам — считает
+  // разными мерами: на В1 это пять плановых чисел против пятнадцати
+  // фактических подходов, и один длинный ряд махов двигает разность, на
+  // которой стоит единственный автоматический сигнал к пересборке (правило 4).
+  // Бонус необязателен: включать его дозу в план значит занижать плановый RPE
+  // в те дни, когда бонус не брали.
+  const rpes = session.exercises.flatMap((e) => (e.optional || e.rpe == null
+    ? []
+    : Array.from({ length: Number(e.sets) || 1 }, () => e.rpe)));
   const workout = {
     date,
     kind: session.kind,
@@ -118,7 +129,7 @@ function stopTimer() {
  * прошлой тренировки в часы следующей. Отметки растяжки при этом жили
  * только в памяти и пропадали молча, в отличие от подходов.
  */
-async function leave() {
+export async function leave() {
   stopTimer();
   stopClock();
   try {
@@ -415,8 +426,8 @@ async function drawStretch(box) {
 /** Кнопка завершения. Бонус и внеплановое в счётчик не входят. */
 function finishButton(box) {
   const { workout } = state;
-  const required = requiredPairs(workout).map((x) => x.e);
-  const touched = required.filter((e) => e.skipped || e.sets.length).length;
+  const required = requiredPairs(workout);
+  const touched = required.filter(({ e, p }) => exerciseClosed(e, p)).length;
   box.append(el('button', {
     className: 'wk-finish',
     textContent: `ЗАВЕРШИТЬ (${touched} из ${required.length})`,
@@ -779,7 +790,7 @@ async function draw(box) {
   // и кнопка перехода это показывает.
   const workingSets = (ex.sets || []).filter((x) => !x.warmup).length;
   const planned = Number(presc.sets) || 0;
-  const ready = !ex.skipped && planned > 0 && workingSets >= planned;
+  const ready = !ex.skipped && exerciseClosed(ex, presc);
   const last = index === total - 1;
   const history = await historyFor(ex.name, workout.id, workout.date);
   const prev = history.length ? history[history.length - 1] : null;
@@ -795,10 +806,7 @@ async function draw(box) {
   // Закрытым считается упражнение, набравшее план или пропущенное осознанно.
   // Бонус и внеплановое в знаменатель не идут: сессия закрыта и без них.
   const required = requiredPairs(workout);
-  const closedCount = required.filter(({ e, p }) => {
-    const done = (e.sets || []).filter((x) => !x.warmup).length;
-    return e.skipped || (p.sets > 0 && done >= p.sets);
-  }).length;
+  const closedCount = required.filter(({ e, p }) => exerciseClosed(e, p)).length;
   const progress = required.length
     ? Math.round((closedCount / required.length) * 100) : 0;
 
@@ -931,9 +939,7 @@ async function draw(box) {
     // Разминочные показываются сверху независимо от порядка записи: их часто
     // вносят после рабочих, вспомнив. В базе порядок остаётся хронологическим —
     // на нём стоит расчёт отдыха по меткам времени.
-    const ordered = ex.sets
-      .map((s, i) => ({ s, i }))
-      .sort((a, b) => Number(Boolean(b.s.warmup)) - Number(Boolean(a.s.warmup)));
+    const ordered = orderedSets(ex.sets);
 
     ordered.forEach(({ s, i }, pos) => {
       const marks = [s.warmup ? 'разм.' : null, s.control ? 'контроль' : null]
@@ -994,10 +1000,10 @@ async function draw(box) {
     const editing = state.editSet != null && ex.sets[state.editSet] ? ex.sets[state.editSet] : null;
     // Позиция правимого подхода на экране: список отсортирован разминочными
     // наверх, и номер в базе с номером в списке не совпадает.
+    // Тем же порядком, что и список выше: два компаратора разъехались бы
+    // на первой же правке, и кнопка называла бы чужой номер подхода.
     const editingPos = editing
-      ? ex.sets.map((x, k) => ({ x, k }))
-        .sort((a, b) => Number(Boolean(b.x.warmup)) - Number(Boolean(a.x.warmup)))
-        .findIndex(({ k }) => k === state.editSet)
+      ? orderedSets(ex.sets).findIndex(({ i }) => i === state.editSet)
       : -1;
     const d = editing || nextSetDefaults(presc, ex.sets, history);
     const weightLabel = cardio ? 'минуты' : (presc.perSide ? 'вес на сторону' : 'вес');
@@ -1084,7 +1090,14 @@ async function draw(box) {
         : (workingSets >= planned && planned > 0
           ? `ЗАПИСАТЬ ЛИШНИЙ ПОДХОД (${workingSets + 1})`
           : `ЗАПИСАТЬ ПОДХОД ${ex.sets.length + 1}`),
-      onclick: async () => {
+      onclick: async (e) => {
+        // Двойной тап писал второй подход: `push` идёт синхронно до `await
+        // save`, а кнопка не блокировалась. В журнале это выглядит не ошибкой,
+        // а честными двумя подходами — `foldSets` их склеит, — и тихо смещает
+        // недельный объём, средний RPE и точку «план закрыт».
+        const btn = e && e.target;
+        if (btn && btn.disabled) return;
+        if (btn) btn.disabled = true;
         const warmup = state.warmup;
         // Ручным отдых считается, только когда поле реально тронули. Раньше
         // оно предзаполнялось измеренным значением, поэтому `manual` был
@@ -1136,6 +1149,9 @@ async function draw(box) {
           };
           if (!(await save(box))) {
             ex.sets[i] = before;
+            // Без перерисовки кнопка осталась бы заблокированной навсегда,
+            // и отказ записи превратился бы в невозможность записать.
+            if (btn) btn.disabled = false;
             return;
           }
           state.editSet = null;
@@ -1149,15 +1165,25 @@ async function draw(box) {
         // которая переживает закрытие приложения.
         const hadFirst = Boolean(workout.firstSetAt);
         if (!hadFirst) workout.firstSetAt = new Date().toISOString();
+        // Метка последнего подхода живёт в самой записи, а не только в памяти
+        // экрана, и пишется до сохранения — иначе она не доедет до базы.
+        // Раньше её держал один `state`: экран погас, iOS выгрузил PWA — и
+        // следующий подход уходил в журнал без отдыха, при том что шапка
+        // по-прежнему обещала секундомер. Фактический отдых на якорных лифтах —
+        // обязательная строка данных, а дыра была беззвучной.
+        const prevLastAt = workout.lastSetAt || null;
+        workout.lastSetAt = new Date().toISOString();
         if (!(await save(box))) {
           ex.sets.pop();
           if (!hadFirst) workout.firstSetAt = null;
+          workout.lastSetAt = prevLastAt;
+          if (btn) btn.disabled = false;
           return;
         }
         // Тумблер залипал: включённый однажды, он метил разминочными все
         // следующие подходы, пока это не замечали глазами.
         state.warmup = false;
-        state.lastSetAt = new Date().toISOString();
+        state.lastSetAt = workout.lastSetAt;
         const seconds = presc.rest || 90;
         await draw(box);
         if (mode === 'live') {
@@ -1187,11 +1213,8 @@ async function draw(box) {
   for (let i = index + 1; i < workout.exercises.length && ahead.length < 3; i++) {
     const e = workout.exercises[i];
     const p = workout.prescription[i] || {};
-    const done = (e.sets || []).filter((x) => !x.warmup).length;
     const free = Boolean(p.unplanned || e.unplanned);
-    // У внепланового плана нет, и `p.sets` там ноль: очередь звала его
-    // до конца сессии и печатала «0×—». Закрытым считаем по факту работы.
-    if (e.skipped || (free ? done > 0 : (p.sets > 0 && done >= p.sets))) continue;
+    if (exerciseClosed(e, p)) continue;
     ahead.push({
       i,
       name: e.replacedWith || e.name,
@@ -1354,7 +1377,6 @@ async function draw(box) {
   }
 }
 
-const KIND_RU = { gym: 'зал', home: 'дом', skill: 'навык', cardio: 'кардио' };
 
 // Условия добора печатаются памяткой. Проверяет их атлет, а не приложение:
 // вычислять «можно ли» значило бы запрещать, а решение остаётся за ним.
@@ -1545,7 +1567,11 @@ export async function render(box, params = {}) {
     if (!workout.prescription) {
       const plan = await getPlan(workout.date);
       const hit = sessionFor(plan, workout.date, workout.kind || 'gym', workout.dayCode);
-      workout.prescription = hit ? hit.session.exercises : [];
+      // По имени, а не по позиции: см. `prescriptionFor`. Порядок и число
+      // упражнений в факте с планом не совпадают, и раньше сюда клался план
+      // целиком, а адресовался он индексом упражнения.
+      workout.prescription = prescriptionFor(
+        workout.exercises, hit ? hit.session.exercises : []);
     }
     const guide = new Map((await getExercises()).map((e) => [e.name, e]));
 
@@ -1586,7 +1612,7 @@ export async function render(box, params = {}) {
     state = {
       workout, index: 0, timer: null, clock: null, restLeft: 0,
       paramDate: date, showOverview: false,
-      warmup: false, lastSetAt: null, guide, showPlan: false,
+      warmup: false, lastSetAt: workout.lastSetAt || null, guide, showPlan: false,
       editSet: null, insertAt: null,
       stretch, bonus, day, week,
       marks: { ...(day.stretch || {}) }, secs: { ...(day.stretchSec || {}) },

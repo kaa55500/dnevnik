@@ -419,7 +419,6 @@ ol.wk-sets li {
 }
 
 .set-n { position: relative; color: var(--muted); }
-.set-body { position: relative; overflow-wrap: anywhere; }
 
 .set-del {
   position: relative;
@@ -1022,7 +1021,13 @@ ol.stretch .etalon { margin: 0 14px 14px 34px; }
 }
 
 /* ---------- Плашка обновления ---------- */
+/* Плашка обновления: не сообщение, а кнопка. Правки, дописанные хвостом файла,
+   раньше перебивали фон и отступы отсюда, и «вид плашки» из этого блока
+   не действовал вовсе — искать это глазами по 1400 строкам дорого. */
 .updated {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
   border: 0;
   position: fixed;
   left: 16px; right: 16px;
@@ -1030,7 +1035,8 @@ ol.stretch .etalon { margin: 0 14px 14px 34px; }
   background: var(--accent);
   color: #000;
   text-align: center;
-  padding: 12px;
+  padding: 0;
+  background: none;
   border-radius: 999px;
   font: 600 var(--t-sm) var(--sans);
   z-index: 10;
@@ -1199,17 +1205,10 @@ ol.stretch .etalon { margin: 0 14px 14px 34px; }
 
 .wk-queue { margin: 16px 0 8px; }
 
-/* Люфт 120 %: верхняя доза и условия допуска. Бейдж акцентный, памятка серая —
-   первое читается боковым зрением, второе только когда за ним потянулся. */
-.plus-hint {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 8px;
-  margin: 10px 0 0;
-  font-size: 13px;
-  color: var(--muted);
-}
+/* Бейдж люфта 120 % в плашке. Остальные правила чипа (`.plus-hint`,
+   `.pos-plus`, `.group-row.taken`) сняты 02.09: чип уехал в плашку 31.08,
+   а `taken` висит на `.bonus-banner`, и селектор по `.group-row` не совпадал
+   никогда — рабочее правило ниже, у самой плашки. */
 .plus-badge {
   padding: 2px 8px;
   border-radius: 999px;
@@ -1218,20 +1217,6 @@ ol.stretch .etalon { margin: 0 14px 14px 34px; }
   font-weight: 600;
   white-space: nowrap;
 }
-.pos-plus {
-  display: block;
-  margin-top: 2px;
-  font-size: 12px;
-  color: var(--accent);
-}
-
-/* Подпись группы после памятки допуска не должна липнуть к ней. */
-.plus-hint + .group-cap { margin-top: 16px; }
-
-/* Упражнение, где добор 120 % уже взят: строка гасится, чтобы в списке
-   было видно, что осталось, а не что сделано. */
-.group-row.taken .row-title { color: var(--muted); }
-.group-row.taken .row-value { color: var(--accent); }
 
 /* Секунды удержания: узкое поле под строкой позиции, чтобы не ломать
    выравнивание названия и дозы. Галочка отвечает «делал ли», цифра — «сколько». */
@@ -1327,7 +1312,10 @@ ol.plan-list li.plan-insert { border-top: 0; }
 
 /* Правка записанного подхода. */
 ol.wk-sets li.editing { outline: 1px solid var(--accent); border-radius: 8px; }
+/* Строка подхода — кнопка: тап подставляет её в форму правки. */
 .set-body {
+  position: relative;
+  overflow-wrap: anywhere;
   flex: 1;
   background: none;
   border: 0;
@@ -1356,7 +1344,7 @@ h2.wk-now { color: var(--accent); }
 }
 
 /* Отмена заполнения — действие разрушительное, и выглядеть должно так. */
-.back.danger { color: var(--bad); }
+.back.danger { color: var(--bad); margin-top: 28px; }
 
 /* Сессия, уехавшая с этой даты на другую. */
 .card.moved .group-row { padding-left: 0; padding-right: 0; }
@@ -1409,10 +1397,8 @@ button.rec-fact.tap .rec-fact-label { color: var(--accent); }
 }
 
 /* Удаление отодвинуто от ЗАВЕРШИТЬ: две соседние кнопки под пальцем. */
-.back.danger { margin-top: 28px; }
 
 /* Плашка обновления: кнопка плюс крестик. */
-.updated { display: flex; gap: 8px; align-items: stretch; padding: 0; background: none; }
 .updated-go {
   flex: 1;
   background: var(--accent);
@@ -1429,4 +1415,10 @@ button.rec-fact.tap .rec-fact-label { color: var(--accent); }
   border: 0;
   border-radius: 999px;
   font-size: 20px;
+}
+
+/* Плановая цифра в форме норм: видна, но не правится — источник план цикла. */
+label.from-plan input[disabled] {
+  opacity: .75;
+  border-style: dashed;
 }

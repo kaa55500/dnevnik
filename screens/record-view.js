@@ -64,18 +64,23 @@ function exerciseTable(rows) {
     el('span', { textContent: 'RPE' })));
 
   for (const ex of rows) {
+    // Строка пропуска идёт первой, но подходы под ней остаются: сделанное
+    // до того, как упражнение бросили, — такой же факт, как остальное.
     if (ex.skipped) {
       table.append(el('div', { className: 'rec-row skip' },
         el('span', { className: 'rec-name', textContent: ex.name }),
         el('span', { className: 'rec-skip', textContent: `пропуск — ${ex.reason}` })));
-      if (ex.note) table.append(note(ex.note));
-      continue;
+      if (!ex.groups.length) {
+        if (ex.note) table.append(note(ex.note));
+        continue;
+      }
     }
 
     ex.groups.forEach((g, i) => {
       // Название стоит только у первой группы: второй строкой идёт тот же
       // снаряд с другим весом, и повторять имя значит сбивать чтение столбца.
-      const name = i === 0 ? ex.name : '';
+      // У пропущенного имя уже напечатано строкой выше.
+      const name = (i === 0 && !ex.skipped) ? ex.name : '';
       if (g.cardio) {
         table.append(el('div', { className: 'rec-row' },
           el('span', { className: 'rec-name', textContent: name }),

@@ -1,15 +1,7 @@
 import { fmtNum, fmtWeight } from '../lib/format.js';
 import { pickPlan, sessionsFor } from '../plan.js';
 import { isoWeek, fromISO } from '../lib/dates.js';
-
-const SIGNALS = {
-  headache: 'головная боль',
-  knee: 'колено',
-  chest: 'правая грудь',
-  joints: 'ноющие суставы',
-};
-
-const KIND_RU = { gym: 'зал', home: 'дом', skill: 'навык', cardio: 'кардио', mobility: 'растяжка' };
+import { SIGNALS, KIND_RU } from './day-logic.js';
 
 const has = (v) => v !== null && v !== undefined;
 const same = (list) => list.every((v) => v === list[0]);
@@ -68,15 +60,20 @@ export function exerciseRow(ex) {
   // ровно там, где начинается смысл.
   const name = ex.replacedWith || ex.name;
   const replaced = ex.replacedWith ? (ex.planName || ex.name) : null;
-  if (ex.skipped) {
-    return {
-      name, replaced, skipped: true, groups: [],
-      reason: ex.skipReason || 'без причины', note: ex.note || null,
-    };
-  }
   // Разминка в запись дня не идёт: она не несёт ни объёма, ни прогрессии,
   // а места занимает столько же, сколько рабочий подход.
   const groups = foldSets((ex.sets || []).filter((x) => !x.warmup));
+  if (ex.skipped) {
+    // Записанные подходы печатаются рядом с причиной. Раньше пропуск их
+    // проглатывал: сделал два подхода становой, на третьем сел, нажал
+    // «пропуск» — и эти два исчезали из записи дня, журнала, свода, CSV,
+    // объёма и e1RM, продолжая при этом считаться в среднем RPE. Данные
+    // лежали в базе, а увидеть их было нельзя ничем, кроме бэкапа.
+    return {
+      name, replaced, skipped: true, groups,
+      reason: ex.skipReason || 'без причины', note: ex.note || null,
+    };
+  }
   if (!groups.length) return null;
   return { name, replaced, skipped: false, groups, note: ex.note || null };
 }

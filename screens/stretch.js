@@ -46,13 +46,34 @@ export async function render(box, params = {}) {
   const hint = warmupHint(session, homeDone);
   if (hint) box.append(el('p', { className: 'hint', textContent: hint }));
 
-  box.append(stretchList(session.positions, guide, marks, secs));
+  // Отметки пишутся сразу, как в экране тренировки. Раньше `onChange` сюда
+  // не передавался: отметил шесть позиций, ушёл по нижней вкладке не нажав
+  // «Сохранить блок» — и всё пропало молча. `navigate` просто чистит экран,
+  // никакого сохранения на выходе тут нет. Явка по растяжке — объявленная цель.
+  const persistMarks = async () => {
+    const fresh = (await getDay(date)) || { date };
+    fresh.stretch = { ...(fresh.stretch || {}), ...marks };
+    fresh.stretchSec = { ...(fresh.stretchSec || {}), ...secs };
+    if (date !== todayISO()) fresh.backdated = true;
+    await putDay(fresh);
+  };
+  box.append(stretchList(session.positions, guide, marks, secs, persistMarks));
 
   const splitInput = session.measureSplit
     ? el('input', { type: 'number', step: '0.5', inputMode: 'decimal', value: week.splitGap ?? '' })
     : null;
 
   if (splitInput) {
+    // Цифра пишется по вводу, а не только по кнопке: отметки позиций уже
+    // защищены, а просвет терялся при уходе по нижней вкладке — при том, что
+    // это объявленная цель года и обязательная строка вторника.
+    splitInput.onchange = async () => {
+      const v = parseNum(splitInput.value);
+      if (v == null) return;
+      const wk = (await getWeek(isoWeek(date))) || { id: isoWeek(date) };
+      applySplit(wk, session, v, homeDone);
+      await putWeek(wk);
+    };
     box.append(el('div', { className: 'split-measure' },
       el('label', {}, 'просвет шпагата, см', splitInput),
       el('p', { className: 'hint', textContent: splitHint(session, homeDone) })));

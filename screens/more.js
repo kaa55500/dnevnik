@@ -2,12 +2,13 @@ import {
   getWeek, putWeek, getSettings, putSettings, putPlan, listPlans,
   getExercises, dumpAll, restoreAll, listWorkouts, listDays, listWeeks,
 } from '../store.js';
-import { pickPlan } from '../plan.js';
+import { pickPlan, nutritionFor, targetsFor, anyMobility } from '../plan.js';
 import { validatePlan } from '../plan.js';
 import { toCSV, weeklySummary, parseBackup, download } from '../export.js';
-import { todayISO, isoWeek } from '../lib/dates.js';
+import { todayISO, isoWeek, weekDays } from '../lib/dates.js';
 import { parseNum } from '../lib/format.js';
 import { etalonBlock } from './etalon.js';
+import { applySplit } from './stretch-block.js';
 import { navigate } from '../main.js';
 
 function el(tag, props = {}, ...kids) {
@@ -85,6 +86,13 @@ function numField(label, key, obj, step = 'any') {
   return el('label', {}, label, i);
 }
 
+// Плановая цифра: показывается, но не правится. `data-key` нет намеренно —
+// иначе `collect` записал бы её в настройки и развилка «кто главный» вернулась.
+function planField(label, value) {
+  const i = el('input', { type: 'text', value: value ?? '', disabled: true });
+  return el('label', { className: 'from-plan' }, label, i);
+}
+
 function checkField(label, key, obj) {
   const i = el('input', { type: 'checkbox', checked: Boolean(obj[key]) });
   i.dataset.key = key;
@@ -128,19 +136,28 @@ export async function render(box, params = {}) {
     menu(box, { weekId, settings, plan, plans });
     return;
   }
-  if (section === 'week') return sectionWeek(box, w, weekId);
+  if (section === 'week') return sectionWeek(box, w, weekId, plan);
   if (section === 'data') return sectionData(box, { settings, plan, plans, weekId });
-  if (section === 'goals') return sectionGoals(box, settings);
+  if (section === 'goals') return sectionGoals(box, settings, plan);
   return sectionGuide(box);
 }
 
 // ---------------------------------------------------------------
+// Подпись плитки «Цели и нормы». И вес, и ккал берутся из плана цикла:
+// он меняется каждые пять недель, а ручная настройка не меняется никогда —
+// именно так дефолт 2380 от Ц2 провисел весь Ц3 при плановых 2300.
+function planLine(plan, settings) {
+  const t = targetsFor(plan, settings);
+  const w = t.weight ? t.weight.value : settings.goalWeight;
+  return `${w} кг · ${nutritionFor(plan, settings).kcal} ккал`;
+}
+
 // Меню: входы плитками, второстепенное — строками с шевроном.
 // ---------------------------------------------------------------
 function menu(box, { weekId, settings, plan, plans }) {
   const grid = el('div', { className: 'tiles' },
     tile('week', 'Замеры недели', weekId, () => navigate('more', { section: 'week', week: weekId })),
-    tile('goals', 'Цели и нормы', `${settings.goalWeight} кг · ${settings.goalKcal} ккал`,
+    tile('goals', 'Цели и нормы', planLine(plan, settings),
       () => navigate('more', { section: 'goals' })),
     tile('guide', 'Справочник', 'техника и эталоны',
       () => navigate('more', { section: 'guide' })),
@@ -175,7 +192,7 @@ function menu(box, { weekId, settings, plan, plans }) {
 }
 
 // ---------------------------------------------------------------
-function sectionWeek(box, w, weekId) {
+function sectionWeek(box, w, weekId, plan) {
   box.append(el('p', { className: 'hint', textContent: `Неделя ${weekId}` }));
   const form = el('div', { className: 'grid' },
     numField('талия, см', 'waist', w, '0.5'),
@@ -190,13 +207,26 @@ function sectionWeek(box, w, weekId) {
     numField('ккал ср. (FatSecret)', 'kcalAvg', w, '10'),
     numField('белок ср., г', 'proteinAvg', w, '5'),
     checkField('фото снято', 'photo', w),
-    checkField('шпагат мерен без домашней', 'splitNoHome', w),
   );
   box.append(form);
   const saveWeek = el('button', {
     className: 'save', textContent: 'Сохранить неделю',
     onclick: async () => {
+      const before = w.splitGap;
       collect(form, w);
+      // Просвет пишется вместе с протоколом, как и на двух других входах.
+      // Раньше он ложился сюда голой цифрой: 31.08 замер переехал в конец
+      // тренировки, и цифры до и после несравнимы — различает их только эта
+      // метка. Одна запись без протокола ломает ряд, по которому ставится порог.
+      // Признак «мерен без домашней» вычисляется, а не вводится: снятая галочка
+      // перезаписывала честное `true`.
+      if (w.splitGap != null && w.splitGap !== before) {
+        const iso = weekDays(weekId)[0];
+        const mob = anyMobility(plan, iso) || {};
+        const home = (await listWorkouts()).some(
+          (x) => weekDays(weekId).includes(x.date) && x.kind === 'home' && x.status === 'done');
+        applySplit(w, mob, w.splitGap, home);
+      }
       try {
         await putWeek(w);
         flash(saveWeek);
@@ -209,14 +239,25 @@ function sectionWeek(box, w, weekId) {
 }
 
 // ---------------------------------------------------------------
-function sectionGoals(box, settings) {
+function sectionGoals(box, settings, plan) {
+  // Ккал и белок цикла задаются планом, и поля тогда только показывают цифру:
+  // правка, которая ни на что не влияет, хуже отсутствующего поля — именно так
+  // ручные 2380 от Ц2 выглядели действующей нормой весь Ц3.
+  const n = nutritionFor(plan, settings);
   const sForm = el('div', { className: 'grid' },
     numField('целевой вес, кг', 'goalWeight', settings, '0.5'),
-    numField('ккал', 'goalKcal', settings, '10'),
-    numField('белок, г', 'goalProtein', settings, '5'),
+    n.fromPlan ? planField('ккал', n.kcal) : numField('ккал', 'goalKcal', settings, '10'),
+    n.fromPlan ? planField('белок, г', n.protein) : numField('белок, г', 'goalProtein', settings, '5'),
     numField('норма сна, ч', 'sleepNorm', settings, '0.5'),
   );
   box.append(sForm);
+  if (n.fromPlan) {
+    box.append(el('p', {
+      className: 'hint',
+      textContent: `Ккал и белок берутся из плана цикла: ${n.kcal} · Б${n.protein}`
+        + (n.fat != null ? ` Ж${n.fat} У${n.carbs}` : '') + '. Меняются пересборкой плана.',
+    }));
+  }
   const saveGoals = el('button', {
     className: 'save', textContent: 'Сохранить',
     onclick: async () => {

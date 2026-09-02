@@ -1,4 +1,4 @@
-import { addDays, daysBetween, isoWeek } from './lib/dates.js';
+import { addDays, daysBetween, isoWeek, todayISO } from './lib/dates.js';
 
 export function movingAverage(series, window = 7) {
   const sorted = [...series].sort((a, b) => a.date.localeCompare(b.date));
@@ -12,7 +12,13 @@ export function movingAverage(series, window = 7) {
 }
 
 export function trendPerWeek(series, days = 21) {
-  const sorted = [...series].sort((a, b) => a.date.localeCompare(b.date));
+  // Окно считается назад от последней прошедшей точки, а не от последней
+  // введённой: один вес, записанный на будущую дату, сдвигал всё окно вперёд
+  // и выбрасывал из расчёта настоящие последние недели. Темп веса и прогноз
+  // выхода на целевой — то, ради чего этот расчёт и существует.
+  const today = todayISO();
+  const sorted = [...series].filter((p) => p.date <= today)
+    .sort((a, b) => a.date.localeCompare(b.date));
   if (sorted.length < 3) return null;
   const last = sorted[sorted.length - 1].date;
   const from = addDays(last, -(days - 1));
@@ -46,10 +52,24 @@ export function e1rm(weight, reps) {
   return weight * (1 + reps / 30);
 }
 
+/**
+ * Потолок повторов для расчётного максимума. Формула Эпли на двадцати повторах
+ * даёт цифру, которой неоткуда взяться, а правило 4 прямо говорит: выше
+ * двенадцати повторов ошибка оценки доходит до пяти. Опечатка «40» вместо «4»
+ * иначе становится вечным рекордом — детектор плато после неё не сработает
+ * больше никогда.
+ */
+export const E1RM_MAX_REPS = 12;
+
 function workingSets(workout, name) {
-  const ex = (workout.exercises || []).find((e) => e.name === name);
-  if (!ex || ex.skipped) return [];
-  return (ex.sets || []).filter((s) => !s.warmup && s.weight != null && s.reps != null);
+  // Замена ищется по фактическому имени: `ex.name` при замене не меняется,
+  // и «жим в раме», сделанный вместо жима лёжа, ложился в максимум жима лёжа.
+  const ex = (workout.exercises || []).find((e) => (e.replacedWith || e.name) === name);
+  // Пропуск больше не съедает записанные подходы: сделанное сделано, а метка
+  // говорит лишь о том, что упражнение не доведено до планового числа.
+  if (!ex) return [];
+  return (ex.sets || []).filter((s) => !s.warmup && s.weight != null && s.reps != null
+    && s.reps > 0 && s.reps <= E1RM_MAX_REPS);
 }
 
 export function weeklyBest(workouts, name) {
@@ -84,12 +104,18 @@ export function weeklyVolume(workouts, exercises) {
   const unknown = new Set();
   for (const w of workouts) {
     for (const ex of w.exercises || []) {
-      if (ex.skipped) continue;
+      // Пропуск не обнуляет сделанное: два подхода становой перед тем, как
+      // сесть, — это два подхода объёма, а не ноль.
       const n = (ex.sets || []).filter((s) => !s.warmup).length;
       if (!n) continue;
-      const groups = coefs.get(ex.name);
+      // Считается фактически сделанное, а не плановое имя. Скамья занята,
+      // атлет пишет замену «жим в раме» — раньше подходы начислялись группам
+      // жима лёжа по его коэффициентам, а само «жим в раме» в `unknown`
+      // не попадало, то есть тревога «нет коэффициентов» молчала.
+      const done = ex.replacedWith || ex.name;
+      const groups = coefs.get(done);
       if (!groups) {
-        unknown.add(ex.name);
+        unknown.add(done);
         continue;
       }
       if (Object.keys(groups).length === 0) continue;   // кардио вклада не даёт
@@ -135,7 +161,14 @@ function median(nums) {
 }
 
 export function readinessFlags(days, settings, workouts) {
-  const sorted = [...days].sort((a, b) => a.date.localeCompare(b.date));
+  // Будущие дни отбрасываются. Стрелка вперёд на экране дня открыта до конца
+  // цикла — посмотреть, что завтра в зале, — и там же рисуется утренний
+  // чек-ин с пустыми полями. Внесённые по привычке вес и сон становились
+  // «последним днём», и сегодняшняя строка не читалась вовсе: готовность
+  // показывала завтрашние цифры. `debts` будущее уже отсекает, готовность — нет.
+  const today = todayISO();
+  const sorted = [...days].filter((d) => d.date <= today)
+    .sort((a, b) => a.date.localeCompare(b.date));
   if (sorted.length === 0) return [];
   const last = sorted[sorted.length - 1];
   const flags = [];
@@ -163,9 +196,19 @@ export function readinessFlags(days, settings, workouts) {
   const done = (workouts || [])
     .filter((w) => w.status === 'done' && w.plannedRPE != null && w.avgRPE != null)
     .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+  // Правило 4 говорит «отклонение ≥1,5 от плана», а не «превышение»: сессия,
+  // прошедшая на полтора ниже плана, — тот же признак, что план пора
+  // пересобрать, просто в другую сторону. Код ловил только превышение, и одна
+  // из двух половин сигнала молчала. Направление называется в тексте, чтобы
+  // флаг не читался одинаково в противоположных случаях.
   const recent = done.slice(-2);
-  if (recent.length === 2 && recent.every((w) => w.avgRPE - w.plannedRPE >= 1.5)) {
-    flags.push({ key: 'rpe', text: 'RPE выше планового на 1,5 две тренировки подряд' });
+  const off = (w) => w.avgRPE - w.plannedRPE;
+  if (recent.length === 2 && recent.every((w) => Math.abs(off(w)) >= 1.5)) {
+    const up = off(recent[recent.length - 1]) > 0;
+    flags.push({
+      key: 'rpe',
+      text: `RPE ${up ? 'выше' : 'ниже'} планового на 1,5 две тренировки подряд`,
+    });
   }
 
   return flags;

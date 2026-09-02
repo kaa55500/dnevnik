@@ -15,17 +15,23 @@ export function toCSV(workouts) {
   const rows = [head];
   for (const w of [...workouts].sort((a, b) => a.date.localeCompare(b.date))) {
     for (const ex of w.exercises || []) {
-      if (ex.skipped) {
+      // Пропуск без единого подхода — одна строка с причиной. Пропуск после
+      // записанных подходов печатает и подходы тоже: они сделаны, и терять их
+      // в выгрузке нельзя. Признак пропуска стоит в каждой строке упражнения.
+      const skip = ex.skipped ? 'да' : '';
+      const reason = ex.skipped ? (ex.skipReason || '') : '';
+      const sets = ex.sets || [];
+      if (ex.skipped && !sets.length) {
         rows.push([w.date, w.weekN, w.dayCode, ex.name, '', '', '', '', '',
           '', '', '',
-          ex.replacedWith || '', 'да', ex.skipReason || ''].map(cell).join(';'));
+          ex.replacedWith || '', skip, reason].map(cell).join(';'));
         continue;
       }
-      (ex.sets || []).forEach((s, i) => {
+      sets.forEach((s, i) => {
         rows.push([w.date, w.weekN, w.dayCode, ex.name, i + 1,
           s.weight, s.reps, s.rpe, s.rest,
           s.minutes, s.km, s.hr,
-          ex.replacedWith || '', '', ''].map(cell).join(';'));
+          ex.replacedWith || '', skip, reason].map(cell).join(';'));
       });
     }
   }
@@ -47,8 +53,14 @@ export function weeklySummary({ weekId, days, week, workouts, exercises, setting
   const wk = (workouts || []).filter((w) => dates.includes(w.date) && w.status === 'done');
   const { volume: vol, unknown } = weeklyVolume(wk, exercises || []);
 
+  // Разминочные в средний RPE не идут — так же, как в `averageRPE` и в своде
+  // сессии. Поле RPE предзаполняется плановым значением, и разминочный,
+  // записанный не глядя, ложился с семёркой: три таких подхода утягивали
+  // недельный средний с 8,4 до 7,8. Свод — основной канал разбора в чате,
+  // и на этой цифре стоит правило 4.
   const rpes = wk.flatMap((w) => (w.exercises || [])
-    .flatMap((e) => (e.sets || []).map((s) => s.rpe))).filter((v) => v != null);
+    .flatMap((e) => (e.sets || []).filter((st) => !st.warmup).map((st) => st.rpe)))
+    .filter((v) => v != null);
   const avgRPE = mean(rpes);
 
   const sleeps = inWeek.map((d) => d.sleepHours).filter((v) => v != null);
@@ -102,9 +114,15 @@ export function weeklySummary({ weekId, days, week, workouts, exercises, setting
   const deload = week5 ? week5.days.some((d) => dates.includes(d.date)) : false;
   const mev = (plan && plan.mev) || settings?.mev || {};
   if (!deload) {
-    for (const [g, v] of Object.entries(vol)) {
-      if (mev[g] != null && v < mev[g]) {
-        lines.push(`! ${short(g)} ниже MEV: ${fmtNum(v, 0)} из ${mev[g]}`);
+    // Обход идёт по порогам, а не по посчитанному объёму: `vol` содержит
+    // только группы, которые встретились в тренировках, и группа с нулём
+    // подходов в него не попадала вовсе. Тревога срабатывала на 3 из 8
+    // и молчала на 0 из 8 — то есть ровно в том случае, ради которого MEV
+    // и заведён. Экран «Объём» считал верно, врал только свод, уезжающий в чат.
+    for (const [g, need] of Object.entries(mev)) {
+      const v = vol[g] || 0;
+      if (need != null && v < need) {
+        lines.push(`! ${short(g)} ниже MEV: ${fmtNum(v, 0)} из ${need}`);
       }
     }
   }
@@ -123,16 +141,18 @@ export function sessionSummary(workout) {
 
   for (const ex of workout.exercises || []) {
     const name = ex.replacedWith ? `${ex.planName} → ${ex.replacedWith}` : ex.name;
-    if (ex.skipped) {
+    // Разминка в своде не печатается: разбор в чате идёт по рабочим подходам.
+    const sets = (ex.sets || []).filter((x) => !x.warmup);
+    if (ex.skipped && !sets.length) {
       lines.push(`${name}: пропуск — ${ex.skipReason || 'без причины'}`);
       continue;
     }
-    // Разминка в своде не печатается: разбор в чате идёт по рабочим подходам.
-    const sets = (ex.sets || []).filter((x) => !x.warmup);
     if (!sets.length) continue;
     const body = sets.map((s) => {
       const rpe = s.rpe != null ? ` @${fmtNum(s.rpe, 1)}` : '';
-      const mark = s.warmup ? ' разм.' : (s.control ? ' контроль' : '');
+      // Разминочные сюда не доходят: они отфильтрованы выше решением 02.09.
+      // Ветка «разм.» была недостижима и читалась как «разминочные бывают».
+      const mark = s.control ? ' контроль' : '';
       // Кардио меряется минутами и километрами: «в/т×null» здесь врало.
       if (s.minutes != null || s.km != null) {
         const parts = [];
@@ -145,7 +165,8 @@ export function sessionSummary(workout) {
       const rest = s.rest != null ? ` /${Math.round(s.rest)}с` : '';
       return `${w}×${s.reps}${rpe}${rest}${mark}`;
     }).join(' · ');
-    lines.push(`${name}: ${body}`);
+    const tail = ex.skipped ? ` · пропуск — ${ex.skipReason || 'без причины'}` : '';
+    lines.push(`${name}: ${body}${tail}`);
     if (ex.note) lines.push(`  ! ${ex.note}`);
   }
 

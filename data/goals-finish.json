@@ -11,11 +11,12 @@
   { "key": "pullups", "label": "подтягивания без веса", "value": 25, "unit": "повт", "dir": "up", "source": "exercise:Подтягивания без веса" },
   { "key": "weightedPullups", "label": "подтягивания +50", "value": 5, "unit": "повт", "dir": "up", "source": "exercise:Подтягивания с весом" },
   { "key": "muscleUp", "label": "выход силой", "value": 10, "unit": "повт", "dir": "up", "source": "exercise:Выход силой" },
-  { "key": "hspu", "label": "отжимания в стойке", "value": 10, "unit": "повт", "dir": "up", "source": "exercise:Отжимания в стойке у стены — КОНТРОЛЬ (только Н4)" },
-  { "key": "toesToBar", "label": "носки к перекладине", "value": 30, "unit": "повт", "dir": "up", "source": "exercise:Носки к перекладине — техника, на Н4 КОНТРОЛЬ" },
-  { "key": "abWheel", "label": "ролик стоя", "value": 10, "unit": "повт", "dir": "up", "source": "exercise:Ролик стоя — КОНТРОЛЬ (только Н4)" },
-  { "key": "lSit", "label": "уголок с пола", "value": 30, "unit": "с", "dir": "up", "source": "exercise:Уголок с пола — КОНТРОЛЬ (только Н4)" },
-  { "key": "flag", "label": "флажок", "value": 1, "unit": "повт", "dir": "up", "source": "exercise:Флажок — подводки" },
-  { "key": "pistol", "label": "присед на одной", "value": 1, "unit": "повт", "dir": "up", "source": "exercise:Присед на одной на возвышение" }
+  { "key": "hspu", "label": "отжимания в стойке", "value": 10, "unit": "повт", "dir": "up", "source": "exercise:Отжимания в стойке у стены" },
+  { "key": "toesToBar", "label": "носки к перекладине", "value": 30, "unit": "повт", "dir": "up", "source": "exercise:Носки к перекладине" },
+  { "key": "abWheel", "label": "ролик стоя", "value": 10, "unit": "повт", "dir": "up", "source": "exercise:Ролик стоя" },
+  { "key": "lSit", "label": "уголок с пола", "value": 30, "unit": "с", "dir": "up", "source": "exercise:Уголок с пола" },
+  { "key": "flag", "label": "флажок", "value": 5, "unit": "с", "dir": "up", "source": "exercise:Флажок" },
+  { "key": "pistol", "label": "присед на одной", "value": 1, "unit": "повт", "dir": "up", "source": "exercise:Присед на одной на возвышение" },
+  { "key": "run5k", "label": "5 км", "value": 25, "unit": "мин", "dir": "down", "source": "exercise-minutes:Бег 5 км на время" }
  ]
 }

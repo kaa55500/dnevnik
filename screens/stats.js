@@ -110,7 +110,13 @@ function bodyPane(pane, { days, weeks, settings, plan, plans }) {
   }
 }
 
-function strengthPane(pane, { workouts }) {
+function strengthPane(pane, { workouts: all }) {
+  // Только закрытые сессии — так же, как в своде недели и на вкладке объёма.
+  // Черновик с опечаткой в повторах («105 × 40» вместо «× 4») давал 245 кг
+  // расчётного максимума, а `detectPlateau` дальше объявлял плато навсегда:
+  // все следующие недели заведомо ниже. И это на контрольном лифте, по
+  // которому меряется цель 140 кг.
+  const workouts = all.filter((w) => w.status === 'done');
   const names = [...new Set(workouts.flatMap((w) =>
     (w.exercises || []).filter((e) => !e.skipped && (e.sets || []).length).map((e) => e.name)))].sort();
 

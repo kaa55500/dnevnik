@@ -1,5 +1,5 @@
 // VERSION и ASSETS генерируются: node tools/build-sw.mjs. Руками не править.
-const VERSION = 'v77bfc618f5ba';
+const VERSION = 'v9f1d6c9246f7';
 const ASSETS = [
   '.',
   'analytics.js',
@@ -42,8 +42,16 @@ const ASSETS = [
 const NETWORK_FIRST = /\/data\/(plan-current|exercises|goals-finish)\.json$/;
 const NETWORK_TIMEOUT = 2000;
 
+// `cache: 'reload'` обходит HTTP-кэш браузера. Без него свежий деплой мог лечь
+// в новый кэш старыми байтами: сам `sw.js` качается мимо HTTP-кэша
+// (`updateViaCache: 'none'`) и версию видит новую, а ассеты `addAll` тянул
+// обычным запросом — то есть из кэша браузера, у которого своя свежесть.
+// Дальше `activate` сносит прежний кэш, и телефон получает старый код под
+// новой версией. Само это не вылечится: `cacheFirst` в сеть больше не пойдёт,
+// а версия второй раз не сменится. Атомарность `addAll` при этом сохраняется.
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(ASSETS)));
+  e.waitUntil(caches.open(VERSION).then(
+    (c) => c.addAll(ASSETS.map((u) => new Request(u, { cache: 'reload' })))));
   self.skipWaiting();
 });
 
@@ -73,14 +81,18 @@ async function networkFirst(request) {
     cache.put(request, res.clone());
     return res;
   } catch {
-    const hit = await caches.match(request);
+    const hit = await caches.match(request, { cacheName: VERSION });
     if (hit) return hit;
     throw new Error('нет ни сети, ни кэша');
   }
 }
 
+// Поиск ограничен кэшем своей версии. `caches.match` без имени идёт по всем
+// кэшам origin, а `activate` сносит прежние внутри `waitUntil` — события
+// `fetch` могут прийти новому worker до конца этой уборки. В том окне страница
+// рисовалась прошлым кодом: выглядит как «правка не доехала» и путает разбор.
 async function cacheFirst(request) {
-  const hit = await caches.match(request);
+  const hit = await caches.match(request, { cacheName: VERSION });
   if (hit) return hit;
   try {
     const res = await fetch(request);
@@ -90,7 +102,7 @@ async function cacheFirst(request) {
     }
     return res;
   } catch {
-    const shell = await caches.match('index.html');
+    const shell = await caches.match('index.html', { cacheName: VERSION });
     if (shell) return shell;
     throw new Error('офлайн и файла нет в кэше');
   }

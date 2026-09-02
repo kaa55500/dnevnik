@@ -30,6 +30,17 @@ export function currentValue(source, ctx, dir = 'up') {
     return rows.length ? rows[rows.length - 1][key] : null;
   }
 
+  // Имя упражнения в плане несёт пометки цикла: «Уголок с пола — КОНТРОЛЬ
+  // (только Н4)». Цели финиша живут до июня 2027 и переживают все циклы,
+  // поэтому сравнение идёт по основе имени — до тире с пометкой. Иначе 21.09,
+  // со стартом Ц4, четыре цели кора ослепли бы разом и молча: экран печатал бы
+  // их без данных, а причина «имя сменилось» ниоткуда не видна.
+  const stem = (n) => String(n || '').split(' — ')[0].trim().toLowerCase();
+  const sameExercise = (ex, name) => {
+    const want = stem(name);
+    return stem(ex.name) === want || stem(ex.replacedWith) === want;
+  };
+
   // Лучший подход за историю. Кардио пишет минуты и километры, а не повторы:
   // без своих источников цель «перезамер 5 км» была недостижима (#9).
   const FIELD = {
@@ -46,7 +57,7 @@ export function currentValue(source, ctx, dir = 'up') {
     let best = null;
     for (const w of ctx.workouts || []) {
       for (const ex of w.exercises || []) {
-        if (ex.name !== name && ex.replacedWith !== name) continue;
+        if (!sameExercise(ex, name)) continue;
         for (const s of ex.sets || []) {
           if (s.warmup) continue;
           const v = s[field];

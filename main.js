@@ -1,5 +1,5 @@
 import { seedIfEmpty } from './store.js';
-import { render as renderWorkout } from './screens/workout.js';
+import { render as renderWorkout, leave as leaveWorkout } from './screens/workout.js';
 import { render as renderDay } from './screens/day.js';
 import { render as renderStretch } from './screens/stretch.js';
 import { render as renderCalendar } from './screens/calendar.js';
@@ -9,18 +9,37 @@ import { render as renderGoals } from './screens/goals.js';
 import { render as renderMore } from './screens/more.js';
 
 const screens = new Map();
+const leavers = new Map();
+// Имя текущего экрана нужно ровно для одного: позвать его уборку при уходе.
 let current = null;
-let currentParams = {};
 
-export function registerScreen(name, render) {
+/**
+ * Экран может отдать вторым аргументом уборку: погасить таймеры, дописать
+ * несохранённое. Она вызывается перед каждым уходом.
+ *
+ * Раньше такого контракта не было вовсе: `navigate` чистил `innerHTML` и всё,
+ * а `leave()` экрана тренировки звали ровно три кнопки. Уход через шапку шёл
+ * мимо — таймер отдыха продолжал тикать уже на экране дня, а модульный `state`
+ * переживал уход целиком и при возврате переиспользовался вместе со снимками
+ * дня и недели, снятыми до ухода. Дальше `persistStretch` мержил снимок поверх
+ * свежей записи, и отметки, снятые на отдельном экране растяжки между уходом
+ * и возвратом, откатывались молча.
+ */
+export function registerScreen(name, render, leave = null) {
   screens.set(name, render);
+  if (leave) leavers.set(name, leave);
 }
 
 export async function navigate(name, params = {}) {
   const render = screens.get(name);
   if (!render) return;
+  const prev = leavers.get(current);
+  if (prev && current !== name) {
+    // Уборка не должна мешать уходу: отказ записи здесь означал бы, что
+    // с экрана невозможно уйти вовсе.
+    try { await prev(); } catch { /* ушли всё равно */ }
+  }
   current = name;
-  currentParams = params;
   const box = document.getElementById('screen');
   box.innerHTML = '';
   delete box.dataset.day;
@@ -35,9 +54,6 @@ export async function navigate(name, params = {}) {
   await render(box, params);
 }
 
-export function currentScreen() {
-  return { name: current, params: currentParams };
-}
 
 document.getElementById('tabs').addEventListener('click', (e) => {
   const b = e.target.closest('button');
@@ -48,7 +64,7 @@ registerScreen('day', renderDay);
 registerScreen('stretch', renderStretch);
 registerScreen('calendar', renderCalendar);
 registerScreen('journal', renderJournal);
-registerScreen('workout', renderWorkout);
+registerScreen('workout', renderWorkout, leaveWorkout);
 registerScreen('stats', renderStats);
 registerScreen('goals', renderGoals);
 registerScreen('more', renderMore);

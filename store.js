@@ -225,6 +225,12 @@ export async function syncExercises() {
  * если пришедший объект валиден и отличается от сохранённого. Нет сети —
  * молча остаёмся на том, что уже лежит.
  */
+/** Пересекаются ли диапазоны дат двух планов хотя бы одним днём. */
+function rangesOverlap(a, b) {
+  if (!a.from || !a.to || !b.from || !b.to) return true;   // старым записям не мешаем
+  return a.from <= b.to && b.from <= a.to;
+}
+
 export async function syncPlan() {
   let fresh = null;
   try {
@@ -236,6 +242,18 @@ export async function syncPlan() {
   const saved = await listPlans();
   const old = saved.find((p) => p.id === fresh.id);
   if (old && JSON.stringify(old) === JSON.stringify(fresh)) return null;
+  // Под одним `id` не должны оказаться два разных цикла. `id` в генераторе
+  // прибит строкой, и менять его при сборке следующего цикла — ручной шаг,
+  // ничем не подстрахованный. Забыть его значило бы: план Ц4 приезжает
+  // под именем `cycle-3`, `putPlan` заменяет запись, и цикл 3 исчезает из базы
+  // целиком. Тренировки уцелели бы (`prescription` лежит внутри записи),
+  // но для всех дат 17.08–20.09 `pickPlan` вернул бы null — а с ним пропали бы
+  // названия позиций растяжки в журнале, признак разгрузочной недели и долги.
+  if (old && !rangesOverlap(old, fresh)) {
+    console.warn(`план ${fresh.id} пришёл с другим диапазоном (${fresh.from}—${fresh.to}`
+      + ` против ${old.from}—${old.to}) — не записан: у нового цикла обязан быть свой id`);
+    return null;
+  }
   await putPlan(fresh);
   return fresh.id;
 }
@@ -255,16 +273,26 @@ export async function dumpAll() {
 /**
  * Восстановление из бэкапа. Порядок важен: всё проверяется до первого clear(),
  * иначе кривая строка в середине оставляет базу с пустыми днями и без замены.
- * Store 'plan' не трогается, если план в дампе не приехал — циклы живут дольше
- * журнала и стирать их нечем.
+ * Планы не заменяются набором, а дописываются по `id`: циклы живут дольше
+ * журнала, и план цикла, которого в бэкапе нет, стирать нечем — восстановить
+ * его потом будет неоткуда.
  */
 export async function restoreAll(dump) {
   const bad = [];
-  const rows = {
-    days: (dump.days || []).filter((r) => (r && typeof r.date === 'string') || bad.push('день без даты')),
-    weeks: (dump.weeks || []).filter((r) => (r && typeof r.id === 'string') || bad.push('неделя без id')),
-    workouts: (dump.workouts || []).filter((r) => (r && typeof r.date === 'string') || bad.push('тренировка без даты')),
+  // Три строки проверяются одним правилом, а не тремя копиями: копии разъезжаются.
+  // Мутационная проба 02.09 показала, что отсев тренировок можно было снять
+  // и набор оставался зелёным, хотя та же мутация на соседней строке `days`
+  // падала — то есть самая ценная часть журнала была защищена слабее всех.
+  const REQUIRED = {
+    days: { key: 'date', what: 'день без даты' },
+    weeks: { key: 'id', what: 'неделя без id' },
+    workouts: { key: 'date', what: 'тренировка без даты' },
   };
+  const rows = {};
+  for (const [name, { key, what }] of Object.entries(REQUIRED)) {
+    rows[name] = (dump[name] || []).filter(
+      (r) => (r && typeof r[key] === 'string') || bad.push(what));
+  }
   const plans = (dump.plans || []).filter((p) => (p && typeof p.id === 'string') || bad.push('план без id'));
   if (bad.length) {
     throw new Error('Импорт отклонён, база не тронута: ' + [...new Set(bad)].join(', '));
@@ -277,10 +305,13 @@ export async function restoreAll(dump) {
     t.objectStore(n).clear();
     for (const row of rows[n]) t.objectStore(n).put(row);
   }
-  if (plans.length) {
-    t.objectStore('plan').clear();
-    for (const p of plans) t.objectStore('plan').put(p);
-  }
+  // Планы сливаются по `id`, а не заменяются набором. Сентябрьский бэкап,
+  // восстановленный в октябре, снёс бы Ц4 целиком — а вместе с ним из журнала
+  // ушли бы предписания, названия позиций растяжки, признак разгрузочной недели
+  // и весь блок долгов. Ц4 с хостинга вернётся, а вот план завершённого цикла
+  // не вернётся ниоткуда: `plan-cycle*.json` в публикуемый набор не входят.
+  // Комментарий над функцией это правило и объявлял, но код делал обратное.
+  for (const p of plans) t.objectStore('plan').put(p);
   if (dump.settings) t.objectStore('settings').put({ ...dump.settings, id: 'main' });
   return new Promise((resolve, reject) => {
     t.oncomplete = () => resolve();

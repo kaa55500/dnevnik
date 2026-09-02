@@ -1,24 +1,18 @@
 import {
   getDay, putDay, getWeek, putWeek, getPlan, getSettings, listWorkouts, putWorkout, findWorkout, listDays, listWeeks,
+  listPlans,
 } from '../store.js';
 import { sessionsFor, weekOf, sessionDates, planRange } from '../plan.js';
-import { plannedSeconds } from './stretch-block.js';
+import { plannedSeconds, applySplit } from './stretch-block.js';
+import { CARDIO_TYPES } from './workout-logic.js';
 import { todayISO, weekdayShort, isoWeek, addDays } from '../lib/dates.js';
 import { parseNum } from '../lib/format.js';
-import { pendingTasks, closedTasks, debts, skipKeyOf, skipScopeOf } from './day-logic.js';
+import { pendingTasks, closedTasks, debts, skipKeyOf, skipScopeOf, SIGNALS } from './day-logic.js';
 import { makeUnplannedWorkout, KIND_TITLE } from './workout-logic.js';
 import { dayRecord } from './journal-logic.js';
 import { renderRecord } from './record-view.js';
 import { navigate } from '../main.js';
 
-const SIGNALS = {
-  headache: 'головная боль',
-  knee: 'колено',
-  chest: 'правая грудь',
-  joints: 'ноющие суставы',
-};
-
-const CARDIO_TYPES = ['ходьба', 'гребля', 'ски-эрг', 'бег', 'air bike', 'велосипед'];
 
 export function el(tag, props = {}, ...kids) {
   const n = document.createElement(tag);
@@ -59,9 +53,9 @@ export async function render(box, params = {}) {
   const today = todayISO();
   const backdated = date !== today;
 
-  const [dayRaw, weekRaw, plan, settings, workouts, days, weeks] = await Promise.all([
+  const [dayRaw, weekRaw, plan, settings, workouts, days, weeks, plans] = await Promise.all([
     getDay(date), getWeek(isoWeek(date)), getPlan(date), getSettings(),
-    listWorkouts(), listDays(), listWeeks(),
+    listWorkouts(), listDays(), listWeeks(), listPlans(),
   ]);
   const day = dayRaw || { date };
   const week = weekRaw || { id: isoWeek(date) };
@@ -128,8 +122,13 @@ export async function render(box, params = {}) {
   }
 
   // ---------- Долги ----------
-  if (!backdated && plan) {
-    const owed = debts({ today, dates: sessionDates(plan), days, weeks });
+  // Даты берутся из всех циклов, а не только из текущего. 21.09 стартует Ц4,
+  // и до заливки его плана `getPlan` на этой дате вернёт null: раньше вместе
+  // с ним молча гас весь блок, и несданные вес и сон за Ц3 просто исчезали
+  // с экрана — не закрытые, а невидимые.
+  if (!backdated) {
+    const allDates = plans.flatMap((p) => sessionDates(p));
+    const owed = debts({ today, dates: [...new Set(allDates)].sort(), days, weeks });
     if (owed.length) {
       const card = el('section', { className: 'card debts' },
         el('h2', { textContent: `Не закрыто: ${owed.length}` }));
@@ -297,13 +296,13 @@ export async function render(box, params = {}) {
         onclick: async () => {
           collect(form, week);
           if (key === 'splitGap') {
+            // Через общий `applySplit`, а не своей копией: копия не снимала
+            // старый `splitNoHome`, и в записи недели оставалась противоречивая
+            // пара. Цифры до и после 31.08 несравнимы, и различает их только
+            // эта метка — одна запись без протокола ломает весь ряд.
             const mob = sessions.find((s) => s.kind === 'mobility');
-            if (mob && mob.splitAfterSession) {
-              week.splitProtocol = 'post';
-            } else {
-              week.splitProtocol = 'cold';
-              week.splitNoHome = !doneKinds.some((x) => x.kind === 'home');
-            }
+            applySplit(week, mob || {}, week.splitGap,
+              doneKinds.some((x) => x.kind === 'home'));
           }
           try {
             await save(week, putWeek);
