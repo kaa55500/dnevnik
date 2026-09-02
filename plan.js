@@ -175,14 +175,28 @@ export function weekOf(plan, iso) {
  * растяжку делают и в субботу, а плановых дней у выходных нет, и записать
  * её было некуда. Состав блока в цикле одинаковый, подменять нечего.
  */
-export function anyMobility(plan) {
+export function anyMobility(plan, iso = null) {
+  const found = [];
   for (const week of (plan && plan.weeks) || []) {
     for (const day of week.days || []) {
       const s = (day.sessions || []).find((x) => x.kind === 'mobility');
-      if (s) return s;
+      if (s) found.push({ date: day.date, session: s });
     }
   }
-  return null;
+  if (!found.length) return null;
+  if (!iso) return found[found.length - 1].session;
+
+  // Ближайший по дате, при равном расстоянии — более поздний. Первый
+  // попавшийся отдавал блок 17.08 с разогревом, снятым пересборкой 31.08:
+  // в субботу вне плана предлагался состав двухнедельной давности.
+  const dist = (d) => Math.abs(Date.parse(d) - Date.parse(iso));
+  let best = found[0];
+  for (const x of found.slice(1)) {
+    const dx = dist(x.date);
+    const db = dist(best.date);
+    if (dx < db || (dx === db && x.date > best.date)) best = x;
+  }
+  return best.session;
 }
 
 /** Все сессии дня в порядке плана. */

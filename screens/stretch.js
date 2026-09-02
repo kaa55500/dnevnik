@@ -19,7 +19,7 @@ export async function render(box, params = {}) {
   const planned = sessionFor(plan, date, 'mobility');
   // Дня вне плана в цикле нет, а растяжку в этот день делают. Берём блок
   // цикла как есть: состав у него один и тот же во всех днях.
-  const fallback = planned ? null : anyMobility(plan);
+  const fallback = planned ? null : anyMobility(plan, date);
   const hit = planned || (fallback ? { session: fallback } : null);
 
   box.append(el('h1', {
@@ -35,7 +35,7 @@ export async function render(box, params = {}) {
   if (fallback) {
     box.append(el('p', {
       className: 'hint',
-      textContent: 'День вне плана — блок взят из цикла. Отметки лягут в этот день.',
+      textContent: 'День вне плана — блок взят из ближайшего дня цикла. Отметки лягут в этот день.',
     }));
   }
   const homeDone = workouts.some(
