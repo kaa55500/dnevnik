@@ -2,7 +2,7 @@ import {
   findWorkout, putWorkout, delWorkout, getPlan, getDay, putDay, getWeek, putWeek,
   listWorkouts, getExercises, listPlans,
 } from '../store.js';
-import { sessionFor, sessionsFor, sessionsAround } from '../plan.js';
+import { sessionFor, sessionsFor } from '../plan.js';
 import { todayISO, weekdayShort, isoWeek, weekDays } from '../lib/dates.js';
 import { fmtNum, fmtWeight, fmtDuration, fmtClock, parseNum } from '../lib/format.js';
 import {
@@ -1320,9 +1320,26 @@ const PLUS_GATE = 'сон ≥ 7 ч · RPE в коридоре · сигналы 
  * в «сегодня тренировки нет» нельзя — любой день цикла должен открываться.
  */
 async function chooser(box, iso) {
-  const [plan, workouts] = await Promise.all([getPlan(iso), listWorkouts()]);
+  const [covering, plans, workouts] = await Promise.all([
+    getPlan(iso), listPlans(), listWorkouts(),
+  ]);
+
+  // Цикл кончается раньше, чем заводится следующий. Экран брал только план,
+  // покрывающий сегодня, и с 21.09 сказал бы «планов нет», хотя Ц3 в базе
+  // лежит: показываем последний загруженный и говорим, что он прошлый.
+  const latest = [...plans].sort((a, b) => String(a.from).localeCompare(String(b.from))).pop();
+  const plan = covering || latest || null;
+  const stale = Boolean(plan && !covering);
 
   box.append(el('h1', { textContent: 'Какую сессию открыть' }));
+
+  if (stale) {
+    box.append(el('p', {
+      className: 'hint',
+      textContent: `Цикл ${plan.id} кончился ${String(plan.to).slice(8)}.${String(plan.to).slice(5, 7)}.`
+        + ' План следующего ещё не залит — ниже прошлый, для истории.',
+    }));
+  }
 
   if (!plan) {
     box.append(el('p', { textContent: 'Загруженных планов нет — импортируй план в «Ещё».' }));
