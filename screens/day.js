@@ -11,6 +11,7 @@ import { pendingTasks, closedTasks, debts, skipKeyOf, skipScopeOf, SIGNALS } fro
 import { makeUnplannedWorkout, KIND_TITLE } from './workout-logic.js';
 import { dayRecord } from './journal-logic.js';
 import { renderRecord } from './record-view.js';
+import { backupNote } from './backup-note.js';
 import { navigate } from '../main.js';
 
 
@@ -105,6 +106,16 @@ export async function render(box, params = {}) {
   box.append(el('div', { className: 'day-links' },
     el('button', { className: 'link', textContent: 'календарь', onclick: () => navigate('calendar', { date }) }),
     el('button', { className: 'link', textContent: 'журнал', onclick: () => navigate('journal') })));
+
+  // Долг по копии данных стоит выше всего остального: на этом экране
+  // собирается день целиком, и терять его нечем, кроме бэкапа.
+  const note = backupNote({
+    lastBackup: settings.lastBackup,
+    hasRecords: Boolean(workouts.length || days.length),
+    today,
+    onOpen: () => navigate('more', { section: 'data' }),
+  });
+  if (note) box.append(note);
 
   if (backdated) {
     box.append(el('div', {

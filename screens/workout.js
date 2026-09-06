@@ -1,10 +1,11 @@
 import {
   findWorkout, putWorkout, delWorkout, getPlan, getDay, putDay, getWeek, putWeek,
-  listWorkouts, getExercises, listPlans,
+  listWorkouts, getExercises, listPlans, getSettings,
 } from '../store.js';
 import { sessionFor, sessionsFor } from '../plan.js';
 import { todayISO, weekdayShort, isoWeek, weekDays } from '../lib/dates.js';
-import { fmtNum, fmtWeight, fmtDuration, fmtClock, parseNum } from '../lib/format.js';
+import { fmtNum, fmtWeight, fmtDuration, fmtClock, fmtRest, parseNum } from '../lib/format.js';
+import { backupNote } from './backup-note.js';
 import {
   nextSetDefaults, planReps, averageRPE, isControlSet, asksChestSignal,
   fillModeOf, restForSet, insertExercise, requiredPairs, workoutElapsed, cardioType,
@@ -120,6 +121,11 @@ function stopTimer() {
     clearInterval(state.timer);
     state.timer = null;
   }
+  // Цифра гасится вместе с интервалом. Пока таймер замирал на нуле, забытое
+  // `restLeft` было нулём и в разметку не попадало само собой. Теперь счёт
+  // уходит в минус, отрицательное значение переживало бы `goTo`, и на новом
+  // упражнении висел бы перебор от подхода, сделанного в прошлом.
+  if (state) state.restLeft = null;
 }
 
 /**
@@ -145,17 +151,27 @@ function stopClock() {
   }
 }
 
+/**
+ * Отсчёт отдыха. Через ноль таймер не останавливается, а уходит в минус:
+ * замершие 00:00 говорили только «время вышло», а между подходами нужен
+ * ответ на другой вопрос — сколько ты уже стоишь. Потолка у минуса нет,
+ * −12:34 такая же честная цифра, как −00:15. Гасит счёт запись следующего
+ * подхода, уход с экрана и переход на другое упражнение (`goTo`).
+ */
 function startTimer(seconds, onTick) {
   stopTimer();
   const started = Date.now();
   state.restLeft = seconds;
   onTick(seconds);
+  // Вибрация — событие пересечения нуля, а не состояния «уже за нулём»:
+  // тик идёт четыре раза в секунду и звал бы телефон до конца отдыха.
+  let buzzed = false;
   state.timer = setInterval(() => {
-    const left = Math.max(0, seconds - Math.round((Date.now() - started) / 1000));
+    const left = seconds - Math.round((Date.now() - started) / 1000);
     state.restLeft = left;
     onTick(left);
-    if (left === 0) {
-      stopTimer();
+    if (left <= 0 && !buzzed) {
+      buzzed = true;
       if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
     }
   }, 250);
@@ -259,6 +275,20 @@ async function finish(box) {
   if (asksChestSignal(workout)) {
     box.append(chestBlock(workout, box));
   }
+
+  // Сессия только что дописана — момент, когда несохранённого больше всего.
+  // Отказ чтения настроек не должен рушить экран закрытия: тренировка уже
+  // в базе, а плашка здесь напоминание, а не часть записи.
+  try {
+    const settings = await getSettings();
+    const note = backupNote({
+      lastBackup: settings.lastBackup,
+      hasRecords: true,
+      today: todayISO(),
+      onOpen: () => navigate('more', { section: 'data' }),
+    });
+    if (note) box.append(note);
+  } catch { /* без плашки, но с закрытой тренировкой */ }
 
   // Точка контроля: тренировка закрыта — значит всё уже лежит в записи дня.
   // Она и есть свод, куда сходятся утро, сессии, растяжка, вечер и замеры
@@ -423,14 +453,22 @@ async function drawStretch(box) {
   }));
 }
 
-/** Кнопка завершения. Бонус и внеплановое в счётчик не входят. */
+/*
+ * Кнопка завершения. Бонус и внеплановое в счётчик не входят.
+ *
+ * Слово «плановых» стоит не для красоты: на одном экране живут четыре разных
+ * знаменателя — шаг очереди (в него входит хвост сессии), число упражнений
+ * в списке (в него входит бонус), плановые упражнения и подходы внутри
+ * текущего. Числа получались 8, 7, 6 и 3, и одинаково безымянные читались
+ * как ошибка. Считает каждое своё — значит каждое и названо.
+ */
 function finishButton(box) {
   const { workout } = state;
   const required = requiredPairs(workout);
   const touched = required.filter(({ e, p }) => exerciseClosed(e, p)).length;
   box.append(el('button', {
     className: 'wk-finish',
-    textContent: `ЗАВЕРШИТЬ (${touched} из ${required.length})`,
+    textContent: `ЗАВЕРШИТЬ · плановых ${touched} из ${required.length}`,
     onclick: () => finish(box),
   }));
 }
@@ -775,7 +813,7 @@ async function draw(box) {
     box.append(el('div', { className: 'wk-head' },
       el('div', {
         className: 'wk-crumbs',
-        textContent: `Н${workout.weekN} · ${workout.dayCode} · ${index + 1}/${total}`,
+        textContent: `Н${workout.weekN} · ${workout.dayCode} · шаг ${index + 1}/${total}`,
       }),
       el('h2', { textContent: step.title })));
     bonusBanner(box);
@@ -803,12 +841,27 @@ async function draw(box) {
     + (presc.rpe != null ? ` · RPE ${fmtNum(presc.rpe, 1)}` : '')
     + (presc.weight ? ` · ${presc.weight}` : '');
 
-  // Закрытым считается упражнение, набравшее план или пропущенное осознанно.
-  // Бонус и внеплановое в знаменатель не идут: сессия закрыта и без них.
+  /*
+   * Полоса меряется подходами, а не упражнениями. По упражнениям она стояла
+   * на нуле всё первое из них — то есть первые пятнадцать минут сессии, —
+   * и пустой трек читался разделителем, а не шкалой. Бонус и внеплановое
+   * в знаменатель не идут: сессия закрыта и без них.
+   *
+   * Пропуск отдаёт свои плановые подходы в числитель целиком. Иначе полоса
+   * не доходила бы до конца там, где ЗАВЕРШИТЬ уже говорит «6 из 6»: обе
+   * цифры меряют «план закрыт», а осознанный пропуск — законный способ его
+   * закрыть (`exerciseClosed`). Разминочные не считаются нигде, лишние сверх
+   * плана не переливают полосу за край.
+   */
   const required = requiredPairs(workout);
-  const closedCount = required.filter(({ e, p }) => exerciseClosed(e, p)).length;
-  const progress = required.length
-    ? Math.round((closedCount / required.length) * 100) : 0;
+  const plannedSets = required.reduce((n, { p }) => n + (Number(p.sets) || 0), 0);
+  const takenSets = required.reduce((n, { e, p }) => {
+    const need = Number(p.sets) || 0;
+    if (e.skipped) return n + need;
+    const done = (e.sets || []).filter((s) => !s.warmup).length;
+    return n + Math.min(done, need);
+  }, 0);
+  const progress = plannedSets ? Math.round((takenSets / plannedSets) * 100) : 0;
 
   // Дата стоит первой строкой: в зале открывают несколько дней подряд,
   // и без неё непонятно, какой именно заполняешь.
@@ -824,7 +877,7 @@ async function draw(box) {
     }),
     el('div', {
       className: 'wk-crumbs',
-      textContent: `Н${workout.weekN} · ${workout.dayCode} · ${index + 1}/${total}`
+      textContent: `Н${workout.weekN} · ${workout.dayCode} · шаг ${index + 1}/${total}`
         + (workout.movedFrom ? ` · перенос с ${workout.movedFrom.slice(8)}.${workout.movedFrom.slice(5, 7)}` : '')
         + (workout.backdated ? ' · задним числом' : '')
         + (workout.status === 'done' ? ' · записана' : ''),
@@ -1039,7 +1092,10 @@ async function draw(box) {
     const restInput = cardio ? null : el('input', {
       type: 'number', step: '5', inputMode: 'numeric', className: 'wk-restin',
       value: restWas,
-      placeholder: mode === 'live' ? 'по секундомеру' : 'не записан',
+      // Плейсхолдер живёт в поле с кеглем 34 px: «по секундомеру» не влезало
+      // и обрывалось на середине. Слово короткое, а мелкий кегль ему задан
+      // отдельным правилом — в поле ждут две цифры, а не фразу.
+      placeholder: mode === 'live' ? 'авто' : 'не записан',
     });
 
     const weightRow = el('label', {}, weightLabel,
@@ -1192,8 +1248,8 @@ async function draw(box) {
           startTimer(seconds, (left) => {
             const label = box.querySelector('.wk-rest');
             if (!label) return;
-            label.textContent = fmtClock(left);
-            label.classList.toggle('over', left === 0);
+            label.textContent = fmtRest(left);
+            label.classList.toggle('over', left <= 0);
           });
         }
       },
@@ -1206,6 +1262,26 @@ async function draw(box) {
       }));
     }
   }
+
+  /*
+   * Счётчик отдыха стоит сразу под кнопкой записи, а не в хвосте экрана.
+   * Своей строкой он был всегда: внутри строки кнопок он забирал ширину под
+   * огромные цифры, и «заметка · замена · пропуск» уезжали вправо за край
+   * ровно в тот момент, когда начинался отдых. Но строка эта лежала ниже
+   * очереди «дальше», то есть на 370 px ниже сгиба, — за главной цифрой
+   * между подходами приходилось скроллить. Теперь она встаёт рядом с кнопкой,
+   * которая её и запускает.
+   *
+   * Место держится и молча: `min-height` не даёт разметке прыгать под пальцем
+   * в момент, когда цифра появляется. Пустота между кнопкой и очередью —
+   * плата за неподвижность строки кнопок, а не недосмотр.
+   */
+  box.append(el('div', {
+    // Перерисовка на живом таймере (заметка, замена) не должна терять признак
+    // перебора: класс ставится не только тиком, но и самой разметкой.
+    className: 'wk-rest' + (state.restLeft != null && state.restLeft <= 0 ? ' over' : ''),
+    textContent: state.restLeft != null ? fmtRest(state.restLeft) : '',
+  }));
 
   // Очередь: три ближайших невзятых упражнения. Видно, сколько осталось,
   // без разворачивания всего плана.
@@ -1251,14 +1327,6 @@ async function draw(box) {
     queue.append(card);
     box.append(queue);
   }
-
-  // Счётчик отдыха стоит своей строкой над кнопками. Внутри строки он забирал
-  // ширину под огромные цифры, и «заметка · замена · пропуск» уезжали вправо
-  // за край экрана ровно в тот момент, когда начинался отдых.
-  box.append(el('div', {
-    className: 'wk-rest',
-    textContent: state.restLeft ? fmtClock(state.restLeft) : '',
-  }));
 
   box.append(el('div', { className: 'wk-nav' },
     el('button', {
@@ -1306,24 +1374,37 @@ async function draw(box) {
     box.append(el('div', {
       className: 'ready-hint',
       textContent: last
-        ? `План закрыт: ${workingSets} из ${planned}. Это последний шаг — можно завершать.`
-        : `План закрыт: ${workingSets} из ${planned}. Дальше →`,
+        ? `План закрыт: подходов ${workingSets} из ${planned}. Это последний шаг — можно завершать.`
+        : `План закрыт: подходов ${workingSets} из ${planned}. Дальше →`,
     }));
   }
 
-  box.append(el('button', {
-    className: 'back', textContent: '← весь план сессии и дата',
-    onclick: () => { stopTimer(); state.showOverview = true; return draw(box); },
-  }));
+  // Две ссылки ухода стоят рядом и потому нуждаются в контейнере: кнопки
+  // строчные, помещались в одну строку и слипались в «← весь план сессии
+  // и дата← другая сессия» без единого пробела. Раскладка та же, что
+  // у `.day-links` на экране дня, — задача одна, язык один.
+  box.append(el('div', { className: 'wk-links' },
+    el('button', {
+      className: 'back', textContent: '← весь план сессии и дата',
+      onclick: () => { stopTimer(); state.showOverview = true; return draw(box); },
+    }),
+    // Вкладкой «Тренировка» это не заменяется: уход по табу не зовёт `leave()`
+    // (`main.js`, `current !== name`), то есть не гасит таймер и не дописывает
+    // растяжку. Ссылка — единственный безопасный выход к выбору сессии.
+    el('button', {
+      className: 'back', textContent: '← другая сессия',
+      onclick: () => { leave(); navigate('workout', {}); },
+    })));
 
-  box.append(el('button', {
-    className: 'back', textContent: '← другая сессия',
-    onclick: () => { leave(); navigate('workout', {}); },
-  }));
+  finishButton(box);
 
   // Обратный путь есть у любой записи, не только у черновика. Ошибочно
   // закрытую тренировку удалить было нечем вовсе: единственная дверь вела
   // через ЗАВЕРШИТЬ, а после него дверей не оставалось.
+  //
+  // Стоит он последним и своей строкой: разрушительное действие не встаёт
+  // в один ряд с навигацией. В строке ссылок его `margin-top` не работал
+  // вовсе — соседи держали его на общей базовой линии.
   {
     const written = workout.exercises.reduce((n, e) => n + (e.sets || []).length, 0);
     const done = workout.status === 'done';
@@ -1359,8 +1440,6 @@ async function draw(box) {
       },
     }));
   }
-
-  finishButton(box);
 
   // Часы идут своим тиком: таймер отдыха работает не всё время, а минуты
   // тренировки должны считаться и в паузах между подходами.
