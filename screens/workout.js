@@ -1388,9 +1388,11 @@ async function draw(box) {
       className: 'back', textContent: '← весь план сессии и дата',
       onclick: () => { stopTimer(); state.showOverview = true; return draw(box); },
     }),
-    // Вкладкой «Тренировка» это не заменяется: уход по табу не зовёт `leave()`
-    // (`main.js`, `current !== name`), то есть не гасит таймер и не дописывает
-    // растяжку. Ссылка — единственный безопасный выход к выбору сессии.
+    // Вкладкой «Тренировка» это не заменяется. На любую другую вкладку уборка
+    // отрабатывает, но тап по своей же вкладке уходом не считается
+    // (`main.js`, условие `current !== name`): экран перерисуется в выбор
+    // сессии, не погасив таймер и не дописав растяжку. Ссылка зовёт `leave()`
+    // явно и потому остаётся единственным безопасным выходом к выбору.
     el('button', {
       className: 'back', textContent: '← другая сессия',
       onclick: () => { leave(); navigate('workout', {}); },
@@ -1689,7 +1691,13 @@ export async function render(box, params = {}) {
     const week = weekRaw || { id: isoWeek(date) };
 
     state = {
-      workout, index: 0, timer: null, clock: null, restLeft: 0,
+      // Отдыха ещё не было — это `null`, а не ноль. Пока разметка проверяла
+      // счётчик на truthiness, ноль читался как «нечего показывать» и место
+      // оставалось пустым само собой. Проверка стала явной (`!= null`), потому
+      // что счёт уходит в минус, — и ноль тут же начал печататься на свежем
+      // экране как «00:00» с признаком перебора: зелёный сигнал «отдых вышел»
+      // до первого подхода.
+      workout, index: 0, timer: null, clock: null, restLeft: null,
       paramDate: date, showOverview: false,
       warmup: false, lastSetAt: workout.lastSetAt || null, guide, showPlan: false,
       editSet: null, insertAt: null,
