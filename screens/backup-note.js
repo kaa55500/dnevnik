@@ -1,4 +1,5 @@
 import { daysBetween, todayISO } from '../lib/dates.js';
+import { plural } from '../lib/format.js';
 
 /**
  * Плашка «копии данных нет». Приложение — единственный источник правды по факту
@@ -33,20 +34,10 @@ export function backupState({ lastBackup, hasRecords, today = todayISO() }) {
   return days > STALE_DAYS ? { kind: 'stale', days } : null;
 }
 
-/** Склонение дней: 1 день · 2 дня · 5 дней. */
-function plural(n) {
-  const ten = n % 100;
-  if (ten >= 11 && ten <= 14) return 'дней';
-  const one = n % 10;
-  if (one === 1) return 'день';
-  if (one >= 2 && one <= 4) return 'дня';
-  return 'дней';
-}
-
 export function backupText(state) {
   return state.kind === 'never'
     ? 'Копии данных нет ни одной. Журнал живёт только на этом телефоне →'
-    : `Копии данных нет ${state.days} ${plural(state.days)}.`
+    : `Копии данных нет ${state.days} ${plural(state.days, ['день', 'дня', 'дней'])}.`
       + ' Журнал живёт только на этом телефоне →';
 }
 
@@ -56,9 +47,11 @@ export function backupText(state) {
  * место, где выгрузка делается; второй вход в то же действие пришлось бы
  * чинить дважды.
  *
- * Переход передаётся вызывающим, а не берётся из `main.js`: общий блок,
- * как и `record-view.js`, не должен добавлять ребро в цикл экранов ради
- * одной кнопки.
+ * Переход передаётся вызывающим, а не берётся из `main.js`: так же устроен
+ * `record-view.js` — общий блок экранам не навязывает, куда вести. Ребро
+ * в цикл это тоже не добавляет, но причина не в нём: `navigate` через цикл
+ * ходить как раз имеет право, и число рёбер в `bundle.test.js` поднимается,
+ * когда для этого есть повод.
  */
 export function backupNote({ lastBackup, hasRecords, today = todayISO(), onOpen }) {
   const state = backupState({ lastBackup, hasRecords, today });

@@ -465,6 +465,9 @@ ol.wk-sets li.warm { opacity: 0.5; }
   border-radius: 0;
 }
 
+/* Поле отдыха набрано кеглем 34 px под две цифры; подсказке в нём тесно. */
+.wk-form input::placeholder { font-size: 15px; font-weight: 400; }
+
 .step {
   width: var(--tap); height: var(--tap);
   border: 0;
@@ -545,6 +548,10 @@ ol.wk-sets li.warm { opacity: 0.5; }
   color: var(--ink);
 }
 .wk-rest.over { color: var(--good); }
+
+/* Две ссылки ухода: строчные кнопки помещались в одну строку и слипались
+   без пробела. Раскладка та же, что у `.day-links` на экране дня. */
+.wk-links { display: flex; flex-wrap: wrap; gap: 18px; }
 
 .wk-finish {
   display: block;
@@ -1420,20 +1427,6 @@ label.from-plan input[disabled] {
   opacity: .75;
   border-style: dashed;
 }
-
-/* ---- Хвост экрана заполнения и счётчик отдыха (06.09) ---- */
-
-/* Две ссылки ухода: строчные кнопки помещались в одну строку и слипались
-   без пробела. Раскладка та же, что у `.day-links`. */
-.wk-links { display: flex; flex-wrap: wrap; gap: 18px; }
-
-/* Отмена заполнения — последней строкой под ЗАВЕРШИТЬ. Пока она стояла
-   в ряду ссылок, её `margin-top` не действовал: соседи держали общую
-   базовую линию. */
-.back.danger { display: block; }
-
-/* Поле отдыха набрано кеглем 34 px под две цифры; подсказке в нём тесно. */
-.wk-form input::placeholder { font-size: 15px; font-weight: 400; }
 
 /* Долг по копии данных. Жёлтый, а не серый: очистка данных Safari уносит
    журнал целиком, и это единственное предупреждение об этом. Не закрывается —
