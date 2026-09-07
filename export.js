@@ -10,7 +10,7 @@ const cell = (v) => {
 };
 
 export function toCSV(workouts) {
-  const head = 'дата;неделя;день;упражнение;подход;вес;повторы;RPE;отдых;'
+  const head = 'дата;неделя;день;упражнение;подход;вес;повторы;удержание,с;RPE;отдых;'
     + 'минуты;км;пульс;замена;пропуск;причина';
   const rows = [head];
   for (const w of [...workouts].sort((a, b) => a.date.localeCompare(b.date))) {
@@ -22,14 +22,14 @@ export function toCSV(workouts) {
       const reason = ex.skipped ? (ex.skipReason || '') : '';
       const sets = ex.sets || [];
       if (ex.skipped && !sets.length) {
-        rows.push([w.date, w.weekN, w.dayCode, ex.name, '', '', '', '', '',
+        rows.push([w.date, w.weekN, w.dayCode, ex.name, '', '', '', '', '', '',
           '', '', '',
           ex.replacedWith || '', skip, reason].map(cell).join(';'));
         continue;
       }
       sets.forEach((s, i) => {
         rows.push([w.date, w.weekN, w.dayCode, ex.name, i + 1,
-          s.weight, s.reps, s.rpe, s.rest,
+          s.weight, s.reps, s.sec, s.rpe, s.rest,
           s.minutes, s.km, s.hr,
           ex.replacedWith || '', skip, reason].map(cell).join(';'));
       });
@@ -163,7 +163,10 @@ export function sessionSummary(workout) {
       }
       const w = s.weight == null ? 'в/т' : fmtWeight(s.weight);
       const rest = s.rest != null ? ` /${Math.round(s.rest)}с` : '';
-      return `${w}×${s.reps}${rpe}${rest}${mark}`;
+      // Удержание пишется своей мерой: «в/т×null» было ровно тем, чем
+      // выглядело — подходом, который в своде не читается.
+      const amount = s.sec != null ? `${fmtWeight(s.sec)}с` : String(s.reps);
+      return `${w}×${amount}${rpe}${rest}${mark}`;
     }).join(' · ');
     const tail = ex.skipped ? ` · пропуск — ${ex.skipReason || 'без причины'}` : '';
     lines.push(`${name}: ${body}${tail}`);

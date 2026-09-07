@@ -1,3 +1,4 @@
+import { dm } from '../lib/dates.js';
 // Единый вид записи дня. Один и тот же блок рисуется в «Сделано» на экране дня
 // и в журнале: расхождение между ними означало бы, что одна и та же тренировка
 // в двух местах выглядит по-разному.
@@ -131,7 +132,7 @@ export function renderRecord(rec, { onOpen, onEdit } = {}) {
       .concat(s.avgRPE != null ? [`RPE ${s.avgRPE.toFixed(1).replace('.', ',')}`] : [])
       .concat(s.status === 'draft' ? ['черновик'] : [])
       .concat(s.movedFrom
-        ? [`перенос с ${s.movedFrom.slice(8)}.${s.movedFrom.slice(5, 7)}`] : [])
+        ? [`перенос с ${dm(s.movedFrom)}`] : [])
       .join(' · ');
 
     const cap = caption(`${s.title} · Н${s.weekN} · ${s.code}`, meta);

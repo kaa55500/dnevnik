@@ -6,12 +6,15 @@ export function firstNumber(s) {
   return m ? parseNum(m[0]) : null;
 }
 
+/** «3×8» в плановой строке: подходы и повторы явной парой. */
+const EXPLICIT_REPS = /(\d+)\s*[×x]\s*(\d+)/;
+
 /**
  * Повторы из плановой строки. Запись «3×8» означает три подхода по восемь:
  * первое число — подходы, и подставлять его в поле повторов нельзя.
  */
 export function planReps(s) {
-  const m = String(s ?? '').match(/(\d+)\s*[×x]\s*(\d+)/);
+  const m = String(s ?? '').match(EXPLICIT_REPS);
   return m ? parseNum(m[2]) : firstNumber(s);
 }
 
@@ -23,16 +26,28 @@ export function planReps(s) {
  * откатывался к плановому: введёшь 8,5 при плановых 8 — и следующий подход
  * снова предлагает 8, то есть введённое не переживает даже одного подхода.
  */
-export function nextSetDefaults(presc, doneSets, history) {
+export function nextSetDefaults(presc, doneSets, history, opts = {}) {
   const working = (doneSets || []).filter((s) => !s.warmup);
   if (working.length) {
     const last = working[working.length - 1];
-    return { weight: last.weight, reps: last.reps, rpe: last.rpe ?? presc.rpe ?? null };
+    return {
+      weight: last.weight, reps: last.reps, sec: last.sec ?? null,
+      rpe: last.rpe ?? presc.rpe ?? null,
+    };
   }
   const fromHistory = history && history.length ? history[history.length - 1] : null;
   return {
     weight: fromHistory ? fromHistory.weight : firstNumber(presc.weight),
-    reps: fromHistory ? fromHistory.reps : planReps(presc.reps),
+    // У чистого удержания повторов в плане нет: «удержание 25–35 с» даёт
+    // первое число, и форма звала записать 25 повторов стойки. Подставляем
+    // только явное «N×M» — у Ролика («3×6 + 2×15 с») повторы настоящие.
+    reps: fromHistory ? fromHistory.reps
+      : ((opts.hold && !EXPLICIT_REPS.test(String(presc.reps ?? '')))
+        ? null : planReps(presc.reps)),
+    // Секунды из плана не подставляются: «3×8 + 2×15 с» у Ролика значит,
+    // что первые подходы идут в повторах, и предзаполненное поле удержания
+    // звало бы записать не то, что делаешь.
+    sec: fromHistory ? (fromHistory.sec ?? null) : null,
     rpe: (fromHistory && fromHistory.rpe != null) ? fromHistory.rpe : (presc.rpe ?? null),
   };
 }
@@ -56,9 +71,16 @@ export function averageRPE(workout) {
   return rpes.length ? rpes.reduce((a, b) => a + b, 0) / rpes.length : null;
 }
 
-/** Жимовые дни: только после них спрашивается строка правой груди. */
+/**
+ * Жимовый день: только после него спрашивается строка правой груди.
+ *
+ * До 07.09 спрашивалось и на В2, а В2 — «верх, тяга-акцент»: жима там нет
+ * ни одного. Вопрос без основания обесценивает ответ: строка ведётся ради
+ * симптома, который появляется под жимом, и лишние нули в ней означают
+ * не «чисто», а «спросили не по делу».
+ */
 export function asksChestSignal(workout) {
-  return workout.kind === 'gym' && ['В1', 'В2'].includes(workout.dayCode);
+  return workout.kind === 'gym' && workout.dayCode === 'В1';
 }
 
 /**
@@ -100,14 +122,30 @@ export function fillModeOf(workout) {
  */
 export const REST_CEILING = 1800;
 
-export function restForSet({ mode, lastSetAt, now, manual }) {
+/**
+ * Момент, которым закрывается отдых. До 07.09 им была запись следующего
+ * подхода, то есть в «отдых» входило само выполнение: подход на 8 повторов —
+ * это ещё 30–40 секунд сверху, и ряд отдыха на якорных лифтах был завышен
+ * ровно на длительность подхода.
+ *
+ * Теперь отдых закрывает первое касание формы следующего подхода: перед
+ * подходом атлет и так лезет выставить вес. Не тронул — пишем прежний
+ * интервал, но помечаем его `restToStart: false`, чтобы две меры не слиплись
+ * в одном столбце. Ряд Н1–Н3 остаётся несравнимым с последующими; переписывать
+ * прошлое нечем — метки начала подхода в тех записях нет.
+ */
+export function restForSet({ mode, lastSetAt, now, manual, startedAt }) {
   if (manual != null && Number.isFinite(manual) && manual >= 0) {
-    return { rest: Math.round(manual), restManual: true };
+    return { rest: Math.round(manual), restManual: true, restToStart: false };
   }
-  if (mode !== 'live') return { rest: null, restManual: false };
-  const rest = restBetween(lastSetAt, now ?? Date.now());
-  if (rest != null && rest > REST_CEILING) return { rest: null, restManual: false };
-  return { rest, restManual: false };
+  if (mode !== 'live') return { rest: null, restManual: false, restToStart: false };
+  const until = startedAt ? Date.parse(startedAt) : (now ?? Date.now());
+  const clean = Boolean(startedAt) && Number.isFinite(until);
+  const rest = restBetween(lastSetAt, clean ? until : (now ?? Date.now()));
+  if (rest != null && rest > REST_CEILING) {
+    return { rest: null, restManual: false, restToStart: false };
+  }
+  return { rest, restManual: false, restToStart: rest != null && clean };
 }
 
 /**
@@ -303,4 +341,31 @@ export function setProgress(workout) {
 export function orderedSets(sets) {
   return (sets || []).map((s, i) => ({ s, i }))
     .sort((a, b) => Number(Boolean(b.s.warmup)) - Number(Boolean(a.s.warmup)));
+}
+
+/**
+ * Первое незакрытое упражнение сессии. Открывать всегда с нуля было честно
+ * ровно один раз — в начале тренировки; на любом возврате это означало
+ * пролистать стрелкой весь день, чтобы дописать один забытый подход.
+ */
+export function firstOpen(workout) {
+  const list = workout.exercises || [];
+  const at = list.findIndex(
+    (e, i) => !exerciseClosed(e, (workout.prescription || [])[i] || {}));
+  return at < 0 ? 0 : at;
+}
+
+/**
+ * Долги: упражнения, пропущенные за последнюю неделю. В списке выбора они
+ * идут первыми — «доп. упражнение» чаще всего и есть вчерашний пропуск,
+ * а искать его в справочнике из полутора сотен имён приходилось руками.
+ */
+export function debtNames(workouts, date, days = 7) {
+  const from = new Date(Date.parse(date) - days * 86400000).toISOString().slice(0, 10);
+  const out = new Set();
+  for (const w of workouts || []) {
+    if (w.date > date || w.date < from) continue;
+    for (const e of w.exercises || []) if (e.skipped) out.add(e.name);
+  }
+  return out;
 }

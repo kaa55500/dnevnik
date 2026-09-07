@@ -5,7 +5,7 @@ import {
 import { pickPlan, nutritionFor, targetsFor, anyMobility } from '../plan.js';
 import { validatePlan } from '../plan.js';
 import { toCSV, weeklySummary, parseBackup, download } from '../export.js';
-import { todayISO, isoWeek, weekDays } from '../lib/dates.js';
+import { todayISO, isoWeek, weekDays, dm } from '../lib/dates.js';
 import { parseNum } from '../lib/format.js';
 import { etalonBlock } from './etalon.js';
 import { applySplit } from './stretch-block.js';
@@ -177,7 +177,7 @@ function menu(box, { weekId, settings, plan, plans }) {
       icon: 'week',
       // Полное название не влезает рядом со значением — режем по первому «·».
       title: plan ? plan.title.split('·').slice(0, 2).join('·').trim() : 'Активного цикла нет',
-      value: plan ? `до ${plan.to.slice(8)}.${plan.to.slice(5, 7)}` : '',
+      value: plan ? `до ${dm(plan.to)}` : '',
       onclick: () => navigate('more', { section: 'data' }),
     },
   ]));

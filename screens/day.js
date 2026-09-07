@@ -5,13 +5,14 @@ import {
 import { sessionsFor, weekOf, sessionDates, planRange } from '../plan.js';
 import { plannedSeconds, applySplit } from './stretch-block.js';
 import { CARDIO_TYPES } from './workout-logic.js';
-import { todayISO, weekdayShort, isoWeek, addDays } from '../lib/dates.js';
+import { todayISO, weekdayShort, isoWeek, addDays, dm } from '../lib/dates.js';
 import { parseNum } from '../lib/format.js';
 import { pendingTasks, closedTasks, debts, skipKeyOf, skipScopeOf, SIGNALS } from './day-logic.js';
 import { makeUnplannedWorkout, KIND_TITLE } from './workout-logic.js';
 import { dayRecord } from './journal-logic.js';
 import { renderRecord } from './record-view.js';
 import { backupNote } from './backup-note.js';
+import { moveSession, swapSessions } from './session-move.js';
 import { navigate } from '../main.js';
 
 
@@ -45,6 +46,77 @@ export function collect(form, target) {
   return target;
 }
 
+/**
+ * Перенос сессии на другую дату. Ловится он именно здесь: на вкладке дня
+ * висит тренировка, которую сделал не в свой день, и до 07.09 единственная
+ * дата жила внутри экрана заполнения — в обзоре сессии, куда за переносом
+ * никто не заходит. Плановая дата сохраняется в записи, иначе сверка
+ * «план против факта» считает перенесённую тренировку пропущенной.
+ */
+function moveBlock(box, date, kind, code) {
+  const wrap = el('details', { className: 'move-session' });
+  wrap.append(el('summary', { textContent: 'перенести на другую дату' }));
+  const dateIn = el('input', { type: 'date', value: date, className: 'move-date' });
+  const say = (node) => {
+    const old = wrap.querySelector('.move-say');
+    if (old) old.remove();
+    node.classList.add('move-say');
+    wrap.append(node);
+  };
+  const go = el('button', {
+    className: 'go ghost', textContent: 'Перенести',
+    onclick: async () => {
+      const to = dateIn.value;
+      if (!to || to === date) return;
+      let r;
+      try {
+        r = await moveSession({ from: date, kind, code, to });
+      } catch (err) {
+        errorLine(box, err);
+        return;
+      }
+      if (r.ok) {
+        navigate('day', { date: to });
+        return;
+      }
+      if (r.reason === 'no-plan') {
+        say(el('p', { className: 'error', textContent: 'Этой сессии нет в плане дня.' }));
+        return;
+      }
+      // Почему отказ, а не вторая запись, — в `session-move.js`.
+      const dm = `${dm(to)}`;
+      const block = el('div', { className: 'error' },
+        el('p', {
+          textContent: `На ${dm} уже есть ${code}`
+            + ` (${r.clash.status === 'done' ? 'записана' : 'черновик'}).`,
+        }),
+        el('button', {
+          className: 'go ghost', textContent: `открыть ${dm}`,
+          onclick: () => navigate('day', { date: to }),
+        }));
+      // Обмен нужен ровно тогда, когда обе тренировки сделаны, но записаны
+      // в чужие дни. Меняться нечему, пока эта сессия ещё не заведена.
+      if (r.existing) {
+        block.append(el('button', {
+          className: 'go ghost', textContent: 'поменять местами',
+          onclick: async () => {
+            try {
+              await swapSessions(r.existing, r.clash);
+            } catch (err) {
+              errorLine(box, err);
+              return;
+            }
+            navigate('day', { date });
+          },
+        }));
+      }
+      say(block);
+    },
+  });
+  wrap.append(el('div', { className: 'move-row' }, dateIn, go));
+  return wrap;
+}
+
 function errorLine(box, err) {
   box.prepend(el('div', { className: 'error', textContent: 'Не сохранено: ' + err.message }));
 }
@@ -60,17 +132,39 @@ export async function render(box, params = {}) {
   ]);
   const day = dayRaw || { date };
   const week = weekRaw || { id: isoWeek(date) };
-  const sessions = sessionsFor(plan, date).map((x) => x.session);
+  // Приехавшая переносом сессия становится задачей этого дня, а не строкой
+  // в «Сделано»: долг переехал вместе с датой, и на новой дате он обязан
+  // выглядеть долгом. Без этого список дел о ней не знал вовсе и мог
+  // сказать «Всё закрыто» при незакрытой тренировке.
+  const arrived = workouts.filter(
+    (w) => w.date === date && w.movedFrom && w.movedFrom !== date);
+  const planned = sessionsFor(plan, date).map((x) => x.session);
+  const sessions = [...planned];
+  for (const w of arrived) {
+    const kind = w.kind || 'gym';
+    if (planned.some((s) => s.kind === kind && (s.code || '') === (w.dayCode || ''))) continue;
+    sessions.push({
+      kind,
+      code: w.dayCode || '',
+      title: w.title || w.dayCode || KIND_TITLE[kind],
+      exercises: w.prescription || w.exercises || [],
+      movedFrom: w.movedFrom,
+    });
+  }
   const doneKinds = workouts
     .filter((w) => w.date === date && w.status === 'done')
     .map((w) => ({ kind: w.kind || 'gym', code: w.dayCode || '' }));
   // Сессии, уехавшие с этой даты на другую: план их здесь ждёт, а сделаны
   // они не здесь — долгом такое висеть не должно.
-  // Только закрытая тренировка считается сделанной не здесь. Брошенный
-  // черновик переноса снимал долг с плановой даты, хотя в нём ноль подходов.
+  // Считается и черновик: с 07.09 запись с плановой датой заводится только
+  // явным «Перенести», а не открытием экрана — то есть дата у сессии сменена
+  // осознанно, и на прежней она долгом висеть не должна. Долг при этом
+  // не исчезает, а переезжает: на новой дате сессия ждёт незакрытой.
   const movedAway = workouts
-    .filter((w) => w.movedFrom === date && w.status === 'done')
-    .map((w) => ({ kind: w.kind || 'gym', code: w.dayCode || '', date: w.date }));
+    .filter((w) => w.movedFrom === date)
+    .map((w) => ({
+      kind: w.kind || 'gym', code: w.dayCode || '', date: w.date, status: w.status,
+    }));
 
   // Пометка «задним числом» относится к дню, а не к неделе: у недельной
   // записи своей даты нет, и флаг там ничего не значил бы.
@@ -89,7 +183,7 @@ export async function render(box, params = {}) {
     }),
     el('button', {
       className: 'day-title',
-      textContent: `${weekdayShort(date)} ${date.slice(8)}.${date.slice(5, 7)}`,
+      textContent: `${weekdayShort(date)} ${dm(date)}`,
       onclick: () => navigate('calendar', { date }),
     }),
     el('button', {
@@ -148,7 +242,7 @@ export async function render(box, params = {}) {
       const HEAD = 3;
       const row = (o) => el('button', {
         className: 'debt-row',
-        textContent: `${o.date.slice(8)}.${o.date.slice(5, 7)} — ${o.title}`,
+        textContent: `${dm(o.date)} — ${o.title}`,
         onclick: () => navigate('day', { date: o.date }),
       });
       const fresh = [...owed].reverse();
@@ -265,6 +359,10 @@ export async function render(box, params = {}) {
           className: 'go', textContent: 'Начать',
           onclick: () => navigate('workout', { date, kind: t.key, code: t.code }),
         }),
+        // Код дня — из задачи, а не из первой сессии своего вида: на одной
+        // дате лежат плановый В2 и приехавший Н1, и `find` по виду вернул бы
+        // чужую. Кнопка «Начать» рядом берёт его оттуда же.
+        moveBlock(box, date, t.key, t.code),
       );
     }
 
@@ -344,7 +442,9 @@ export async function render(box, params = {}) {
         el('p', { textContent: 'Ккал и белок за неделю, стойка, ходьба на руках, обхваты.' }),
         el('button', {
           className: 'go', textContent: 'Открыть',
-          onclick: () => navigate('more', { week: isoWeek(date) }),
+          // Раздел называется явно: без него «Ещё» открывалось корневым
+          // экраном, и до замеров недели надо было тапать второй раз.
+          onclick: () => navigate('more', { section: 'week', week: isoWeek(date) }),
         }),
       );
     }
@@ -369,7 +469,10 @@ export async function render(box, params = {}) {
       el('span', { className: 'row-title', textContent: w ? (w.dayCode || m.kind) : m.kind }),
       el('span', {
         className: 'row-value',
-        textContent: `сделана ${weekdayShort(m.date)} ${m.date.slice(8)}.${m.date.slice(5, 7)}`,
+        // Перенесённая и уже сделанная — разные состояния: первое ждёт работы
+        // на новой дате, второе закрыто. Одно слово на оба врало бы про факт.
+        textContent: `${m.status === 'done' ? 'сделана' : 'перенесена на'}`
+          + ` ${weekdayShort(m.date)} ${dm(m.date)}`,
       }),
       el('span', { className: 'chev' })));
     }

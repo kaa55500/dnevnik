@@ -477,6 +477,18 @@ ol.wk-sets li.warm { opacity: 0.5; }
   font: 600 var(--t-md) var(--mono);
 }
 
+/*
+ * Ячейка стопки: не подпись под полем, а ответ на вопрос «на что ставить».
+ * Стоит между весом и текстом про модель, набрана крупнее подсказки —
+ * читается в момент, когда рука уже у машины.
+ */
+.machine-cell {
+  font: 500 var(--t-sm) var(--mono);
+  color: var(--accent);
+  margin: -4px 0 8px;
+  min-height: 1em;
+}
+
 .machine-hint {
   font-size: var(--t-xs);
   color: var(--muted);
@@ -1443,3 +1455,59 @@ label.from-plan input[disabled] {
   text-align: left;
   font: 600 var(--t-sm)/1.35 var(--sans);
 }
+
+/*
+ * Ввод текста на экране вместо системного prompt(). Однострочный prompt
+ * не показывал заметку целиком и не давал поправить середину; поле остаётся
+ * открытым, пока не сохранишь.
+ */
+.wk-editor { margin: 12px 0; }
+
+.wk-text {
+  width: 100%;
+  box-sizing: border-box;
+  font: 400 var(--t-md) var(--sans);
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  resize: vertical;
+}
+
+/* Удержание — третья мера подхода рядом с весом и повторами. */
+.wk-form input.wk-sec { font-variant-numeric: tabular-nums; }
+
+/*
+ * Перенос сессии живёт на карточке дня — там, где висит тренировка, сделанная
+ * не в свой день. Свёрнут по умолчанию: открывают его раз в неделю, а место
+ * на карточке занимал бы всегда.
+ */
+.move-session { margin-top: 10px; }
+
+.move-session > summary {
+  font-size: var(--t-xs);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.move-session .move-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.move-session .move-date { flex: 1 1 auto; min-width: 0; }
+
+.move-session .move-say { margin-top: 8px; }
+
+/* Долг в списке выбора: пропуск последних дней ставится первым и назван. */
+.picker-list .row-value.debt {
+  color: var(--accent);
+  text-transform: uppercase;
+  font-size: var(--t-xs);
+}
+
+/* Добавление упражнения — постоянная строка под очередью, не кнопка в шапке. */
+.add-exercise { margin-top: 10px; }

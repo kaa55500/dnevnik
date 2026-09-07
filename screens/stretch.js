@@ -2,7 +2,7 @@ import {
   getDay, putDay, getWeek, putWeek, getPlan, listWorkouts, getExercises,
 } from '../store.js';
 import { sessionFor, anyMobility } from '../plan.js';
-import { todayISO, isoWeek, weekdayShort } from '../lib/dates.js';
+import { todayISO, isoWeek, weekdayShort, dm } from '../lib/dates.js';
 import { parseNum } from '../lib/format.js';
 import { el } from './day.js';
 import { stretchList, warmupHint, splitHint, applySplit } from './stretch-block.js';
@@ -23,7 +23,7 @@ export async function render(box, params = {}) {
   const hit = planned || (fallback ? { session: fallback } : null);
 
   box.append(el('h1', {
-    textContent: `Растяжка · ${weekdayShort(date)} ${date.slice(8)}.${date.slice(5, 7)}`,
+    textContent: `Растяжка · ${weekdayShort(date)} ${dm(date)}`,
   }));
 
   if (!hit) {

@@ -48,6 +48,12 @@ export function currentValue(source, ctx, dir = 'up') {
     'exercise-weight:': 'weight',
     'exercise-minutes:': 'minutes',
     'exercise-km:': 'km',
+    // Удержания переехали из повторов в своё поле 07.09. Цели «уголок 30 с»
+    // и «флажок» читали `reps` — то есть считали секундами то, что секундами
+    // не было: у флажка в базе лежат два полных повтора за 29.08, а вовсе
+    // не две секунды. История не переписывается, счёт идёт с первого замера
+    // в новом поле: прочерк честнее чужого числа (R24).
+    'exercise-sec:': 'sec',
   };
   const prefix = Object.keys(FIELD).find((p) => source.startsWith(p));
   if (prefix) {

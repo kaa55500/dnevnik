@@ -1,5 +1,5 @@
 import { listDays, listWorkouts, listWeeks, listPlans, getSettings } from '../store.js';
-import { todayISO, weekdayShort } from '../lib/dates.js';
+import { todayISO, weekdayShort, dm } from '../lib/dates.js';
 import { dayRecord, recordedDates } from './journal-logic.js';
 import { renderRecord } from './record-view.js';
 import { el } from './day.js';
@@ -45,7 +45,7 @@ export async function render(box, params = {}) {
     },
     el('span', {
       className: 'jrec-date',
-      textContent: `${weekdayShort(iso)} ${iso.slice(8)}.${iso.slice(5, 7)}.${iso.slice(2, 4)}`
+      textContent: `${weekdayShort(iso)} ${dm(iso)}.${iso.slice(2, 4)}`
         + (iso === todayISO() ? ' · сегодня' : '')
         + (rec.backdated ? ' · задним числом' : ''),
     }),

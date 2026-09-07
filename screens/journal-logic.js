@@ -17,8 +17,12 @@ export function foldSets(sets) {
     // RPE из ключа исключён: разные 8,5 и 9,0 при одном весе разрывали группу
     // на две строки. Разброс не теряется — он печатается диапазоном,
     // и именно он сигналит по правилу 4, а среднее его бы стёрло.
+    // Мера подхода — часть ключа наравне с весом. Без неё удержание слипалось
+    // с повторами: Ролик «3×8 + 2×15 с» при весе тела давал одну группу,
+    // мера бралась у первого подхода, и записанные пятнадцать секунд
+    // печатались прочерком — данные есть, а на экране их нет.
     const key = [s.weight, Boolean(s.warmup), Boolean(s.control),
-      s.minutes, s.km, s.hr].join('|');
+      s.minutes, s.km, s.hr, s.sec != null].join('|');
     const last = groups[groups.length - 1];
     if (last && last.key === key) last.items.push(s);
     else groups.push({ key, items: [s] });
@@ -35,10 +39,14 @@ export function foldSets(sets) {
       return { cardio: parts.join(' · '), mark: null };
     }
 
-    const reps = items.map((x) => x.reps);
-    const repText = same(reps)
+    // Удержание живёт своим полем: подход «15 с» и подход «15 повторов»
+    // в одном столбце неразличимы, а это разные упражнения по смыслу.
+    const hold = has(s.sec);
+    const reps = items.map((x) => (hold ? x.sec : x.reps));
+    const unit = hold ? ' с' : '';
+    const repText = (same(reps)
       ? (items.length > 1 ? `${items.length}×${reps[0]}` : String(reps[0] ?? '—'))
-      : reps.map((r) => (has(r) ? r : '—')).join(',');
+      : reps.map((r) => (has(r) ? r : '—')).join(',')) + (has(reps[0]) ? unit : '');
 
     const rpes = items.map((x) => x.rpe).filter(has);
     const lo = rpes.length ? Math.min(...rpes) : null;
@@ -192,7 +200,13 @@ export function dayRecord(iso, ctx) {
     .filter((w) => w.date === iso)
     .sort((a, b) => (a.kind || '').localeCompare(b.kind || ''));
 
-  const sessions = workouts.map((w) => ({
+  // Пустой черновик — не запись, а задача. Приехавшая переносом сессия
+  // с нулём подходов стояла в «Сделано» строкой «0 упр», хотя сделано
+  // не было ничего; на экране дня она теперь висит карточкой с «Начать».
+  const worked = (w) => w.status === 'done'
+    || (w.exercises || []).some((e) => (e.sets || []).length || e.skipped);
+
+  const sessions = workouts.filter(worked).map((w) => ({
     id: w.id,
     kind: w.kind || 'gym',
     title: KIND_RU[w.kind || 'gym'] || w.kind,

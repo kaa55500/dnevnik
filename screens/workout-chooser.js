@@ -5,7 +5,7 @@
 // на тысячу семьсот строк, где рядом таймер, форма подхода и блок растяжки.
 
 import { getPlan, listPlans, listWorkouts } from '../store.js';
-import { weekdayShort } from '../lib/dates.js';
+import { weekdayShort, dm } from '../lib/dates.js';
 import { KIND_RU } from './day-logic.js';
 import { navigate } from '../main.js';
 
@@ -20,6 +20,25 @@ function el(tag, props = {}, ...kids) {
  * Выбор сессии: вкладка «Тренировка» открывается без даты, и упираться
  * в «сегодня тренировки нет» нельзя — любой день цикла должен открываться.
  */
+/** Границы недели по датам её дней: в плане они лежат россыпью по сессиям. */
+function weekRange(week) {
+  const dates = (week.days || []).map((d) => d.date).filter(Boolean).sort();
+  return dates.length ? { from: dates[0], to: dates[dates.length - 1] } : null;
+}
+
+/**
+ * Недели по кругу от текущей. Не сортировка, а поворот: порядок Н1…Н5
+ * сохраняется, меняется только точка входа. Даты вне плана оставляют
+ * список как есть — поворачивать не от чего.
+ */
+export function rotateToCurrent(weeks, iso) {
+  const at = weeks.findIndex((w) => {
+    const r = weekRange(w);
+    return r && iso >= r.from && iso <= r.to;
+  });
+  return at <= 0 ? weeks : [...weeks.slice(at), ...weeks.slice(0, at)];
+}
+
 export async function chooser(box, iso) {
   const [covering, plans, workouts] = await Promise.all([
     getPlan(iso), listPlans(), listWorkouts(),
@@ -37,7 +56,7 @@ export async function chooser(box, iso) {
   if (stale) {
     box.append(el('p', {
       className: 'hint',
-      textContent: `Цикл ${plan.id} кончился ${String(plan.to).slice(8)}.${String(plan.to).slice(5, 7)}.`
+      textContent: `Цикл ${plan.id} кончился ${dm(plan.to)}.`
         + ' План следующего ещё не залит — ниже прошлый, для истории.',
     }));
   }
@@ -64,7 +83,6 @@ export async function chooser(box, iso) {
       || null;
   };
 
-  const dm = (d) => `${d.slice(8)}.${d.slice(5, 7)}`;
 
   const row = (s) => {
     const w = workoutFor(s);
@@ -92,11 +110,11 @@ export async function chooser(box, iso) {
     return b;
   };
 
-  // Календарный порядок и группировка по неделям. Прежние «Сегодня» /
-  // «Пропущенное и прошлое» / «Впереди» ломали хронологию: прошлое висело
-  // между сегодняшним днём и ближайшими сессиями, и найти нужную дату
-  // приходилось глазами по всему экрану.
-  const weeks = [...(plan.weeks || [])].sort((a, b) => a.n - b.n);
+  // Календарный порядок недель, но начинается он с текущей: список открывают
+  // ради сегодняшней недели, а прокрутка к ней доезжала не всегда и всё равно
+  // требовала листать два месяца прошлого. Остальные идут дальше по кругу —
+  // сегодня Н4, значит Н4 · Н5 · Н1 · Н2 · Н3.
+  const weeks = rotateToCurrent([...(plan.weeks || [])].sort((a, b) => a.n - b.n), iso);
   for (const week of weeks) {
     const rows = [];
     for (const day of week.days || []) {
@@ -119,14 +137,11 @@ export async function chooser(box, iso) {
       + (week.kind === 'deload' ? ' · разгрузка' : '')
       + (current ? ' · эта неделя' : '');
 
-    const head = el('h2', { className: current ? 'wk-now' : '', textContent: title });
-    box.append(head);
+    // Текущая неделя стоит первой, поэтому прокручивать к ней больше нечего:
+    // `scrollIntoView` доезжал не всегда, а на медленном рендере уводил экран
+    // уже после того, как палец начал листать сам.
+    box.append(el('h2', { className: current ? 'wk-now' : '', textContent: title }));
     for (const s of rows) box.append(row(s));
-    // Список открывается на текущей неделе, а не на первой: иначе каждый раз
-    // приходится проматывать два месяца прошлого, чтобы дойти до сегодня.
-    if (current && typeof head.scrollIntoView === 'function') {
-      setTimeout(() => head.scrollIntoView({ block: 'start' }), 0);
-    }
   }
 
   box.append(el('button', {

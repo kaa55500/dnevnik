@@ -40,11 +40,20 @@ const weekday = (iso) => fromISO(iso).getDay();
 const empty = (v) => v === null || v === undefined;
 
 /**
+ * Ключ сессии: вид плюс код дня. Склеивался руками в трёх местах, и ровно
+ * на нём ломались два зальных дня на одной дате — приехавший Н1 закрывал
+ * плановый В2. Одна форма на всех: разъехаться теперь нечему.
+ */
+export function sessionKey(kind, code) {
+  return `${kind}|${code || ''}`;
+}
+
+/**
  * Ключ строки для прочерка. У сессий он несёт код дня: после переноса
  * на одной дате могут стоять два зальных дня, и общий ключ закрыл бы обе.
  */
 export function skipKeyOf(task) {
-  return task.kind ? `${task.kind}|${task.code || ''}` : task.key;
+  return task.kind ? sessionKey(task.kind, task.code) : task.key;
 }
 
 /** Где живёт отметка «не делал»: у дня или у недели. */
@@ -64,7 +73,7 @@ function allTasks(ctx) {
   const daySkip = d.skipped || {};
   const weekSkip = w.skipped || {};
   const isSkipped = (key, k = null) => {
-    const kk = k ? `${k.kind}|${k.code || ''}` : key;
+    const kk = k ? sessionKey(k.kind, k.code) : key;
     return Boolean(skipScopeOf(key) === 'week' ? weekSkip[kk] : daySkip[kk]);
   };
   const sessions = ctx.sessions || [];
@@ -74,13 +83,13 @@ function allTasks(ctx) {
   const doneKeys = new Set();
   for (const x of ctx.doneKinds || []) {
     if (typeof x === 'string') { doneKeys.add(x); continue; }
-    doneKeys.add(`${x.kind}|${x.code || ''}`);
+    doneKeys.add(sessionKey(x.kind, x.code));
     // Запись без кода дня (создана до 01.09 или приехала чужим бэкапом)
     // обязана закрывать сессию своего вида: иначе уже сделанная тренировка
     // копит вечный долг.
     if (!x.code) doneKeys.add(x.kind);
   }
-  const closedSession = (s) => doneKeys.has(`${s.kind}|${s.code || ''}`)
+  const closedSession = (s) => doneKeys.has(sessionKey(s.kind, s.code))
     || doneKeys.has(s.kind);
   const tasks = [];
 
@@ -99,12 +108,12 @@ function allTasks(ctx) {
   // Ключ с кодом дня: два зальных дня на одной дате иначе схлопнутся,
   // и перенос одного закрыл бы второй.
   const movedAway = new Map(
-    (ctx.movedAway || []).map((m) => [`${m.kind}|${m.code || ''}`, m.date]));
+    (ctx.movedAway || []).map((m) => [sessionKey(m.kind, m.code), m.date]));
 
   for (const s of sessions) {
     if (s.kind === 'mobility') continue;
-    const movedTo = movedAway.get(`${s.kind}|${s.code || ''}`)
-      || movedAway.get(`${s.kind}|`) || null;
+    const movedTo = movedAway.get(sessionKey(s.kind, s.code))
+      || movedAway.get(sessionKey(s.kind, '')) || null;
     tasks.push({
       key: s.kind,
       title: s.kind === 'home' ? 'Домашняя сессия' : s.title || s.code,

@@ -1,5 +1,5 @@
 // VERSION и ASSETS генерируются: node tools/build-sw.mjs. Руками не править.
-const VERSION = 'v37467358661b';
+const VERSION = 'v80748bb7e554';
 const ASSETS = [
   '.',
   'analytics.js',
@@ -13,6 +13,7 @@ const ASSETS = [
   'index.html',
   'lib/dates.js',
   'lib/format.js',
+  'lib/machines.js',
   'main.js',
   'manifest.json',
   'plan.js',
@@ -29,6 +30,7 @@ const ASSETS = [
   'screens/journal.js',
   'screens/more.js',
   'screens/record-view.js',
+  'screens/session-move.js',
   'screens/stats.js',
   'screens/stretch-block.js',
   'screens/stretch.js',
