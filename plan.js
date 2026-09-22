@@ -214,10 +214,11 @@ export function trainingSessions(plans) {
   for (const plan of plans || []) {
     for (const week of plan.weeks || []) {
       for (const day of week.days || []) {
-        for (const s of day.sessions || []) {
-          if (s.kind === 'mobility') continue;
+        (day.sessions || []).forEach((s, i) => {
+          if (s.kind === 'mobility') return;
           out.push({
             date: day.date,
+            i,
             weekN: week.n,
             weekKind: week.kind || 'work',
             planId: plan.id,
@@ -226,11 +227,12 @@ export function trainingSessions(plans) {
             title: s.title || s.code,
             count: (s.exercises || []).length,
           });
-        }
+        });
       }
     }
   }
-  return out.sort((a, b) => a.date.localeCompare(b.date) || a.kind.localeCompare(b.kind));
+  // Внутри даты — порядок плана (навык раньше гребли), не алфавит вида.
+  return out.sort((a, b) => a.date.localeCompare(b.date) || a.i - b.i);
 }
 
 /**

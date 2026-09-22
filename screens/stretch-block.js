@@ -62,14 +62,32 @@ export function plannedSeconds(dose) {
  */
 export function stretchList(positions, guide, marks, secs = {}, onChange = null) {
   const list = el('ol', { className: 'stretch' });
+  const inputs = [];
+  // Одна кнопка на весь блок (ЦИКЛ-4.md §8): в Ц3 позиции 6 дней из 6 были
+  // одинаковы, пять тапов несли ноль информации. Отметки при этом ставятся
+  // по позициям, как раньше — журнал и `stretchDone` читают их по-прежнему.
+  list.append(el('li', { className: 'stretch-all' }, el('button', {
+    className: 'save', textContent: 'Сделал блок целиком',
+    onclick: async () => {
+      for (const input of inputs) {
+        if (input.checked) continue;
+        input.checked = true;
+        input.onchange(false);
+      }
+      // Одна запись на блок, не пять: каждая отметка сама сохраняется сразу,
+      // здесь это делается разом.
+      if (onChange) await onChange();
+    },
+  })));
   for (const p of positions) {
     const planned = plannedSeconds(p.dose);
     const input = el('input', { type: 'checkbox', checked: marks[p.n] === true });
+    inputs.push(input);
     const sec = planned == null ? null : el('input', {
       type: 'number', inputMode: 'numeric', step: '5', className: 'pos-sec',
       value: secs[p.n] ?? '', placeholder: String(planned),
     });
-    input.onchange = () => {
+    input.onchange = (persist = true) => {
       marks[p.n] = input.checked;
       // Отмеченная позиция без цифры — это план: подставляем его молча,
       // иначе честная запись стоила бы тапа на каждой из пяти позиций.
@@ -79,7 +97,7 @@ export function stretchList(positions, guide, marks, secs = {}, onChange = null)
       // Отметка сохраняется сразу, как подход. Раньше она жила только
       // в памяти до «Сохранить блок»: уход с экрана или перезагрузка
       // теряли её молча, и шесть отмеченных позиций превращались в ноль.
-      if (onChange) onChange();
+      return onChange && persist !== false ? onChange() : undefined;
     };
     if (sec) {
       sec.onchange = () => {

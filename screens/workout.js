@@ -1171,7 +1171,9 @@ async function draw(box) {
     // Внеплановому упражнению RPE нужен наравне с плановым: механизм
     // «навыкам RPE не ставится» случайно распространялся на любую внеплановую
     // работу, и доделанный жим записывался как навык, без обязательной строки.
-    const asksRPE = cardio || presc.rpe != null || presc.unplanned || ex.unplanned;
+    // Контрольный подход — «что выйдет»: числа RPE в плане нет, а записать
+    // его обязательно (5ПМ при RPE 10 и при 8 — разные базы).
+    const asksRPE = cardio || presc.rpe != null || presc.control || presc.unplanned || ex.unplanned;
     const rpeInput = asksRPE ? el('input', {
       type: 'number', step: cardio ? '1' : '0.5', inputMode: 'decimal',
       value: cardio ? (d.hr ?? '') : (d.rpe ?? ''), className: 'wk-rpe',
@@ -1179,7 +1181,10 @@ async function draw(box) {
     // Отдых руками: в режиме «потом» он единственный источник цифры,
     // в режиме «сейчас» — способ поправить измеренное.
     const restWas = editing && editing.rest != null ? String(editing.rest) : '';
-    const restInput = cardio ? null : el('input', {
+    // Отдых пишется там же, где RPE (ЦИКЛ-4.md §8): четыре лифта и брусья.
+    // На подсобке цифра не читалась ни одним правилом, а поле стояло у каждого
+    // подхода. Плановый `rest` остаётся подсказкой между подходами.
+    const restInput = cardio || !asksRPE ? null : el('input', {
       type: 'number', step: '5', inputMode: 'numeric', className: 'wk-restin',
       value: restWas,
       // Плейсхолдер живёт в поле с кеглем 34 px: «по секундомеру» не влезало

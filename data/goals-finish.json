@@ -16,7 +16,7 @@
   { "key": "abWheel", "label": "ролик стоя", "value": 10, "unit": "повт", "dir": "up", "source": "exercise:Ролик стоя" },
   { "key": "lSit", "label": "уголок с пола", "value": 30, "unit": "с", "dir": "up", "source": "exercise-sec:Уголок с пола" },
   { "key": "flag", "label": "флажок", "value": 5, "unit": "с", "dir": "up", "source": "exercise-sec:Флажок" },
-  { "key": "pistol", "label": "присед на одной", "value": 1, "unit": "повт", "dir": "up", "source": "exercise:Присед на одной на возвышение" },
-  { "key": "run5k", "label": "5 км", "value": 25, "unit": "мин", "dir": "down", "source": "exercise-minutes:Бег 5 км на время" }
+  { "key": "pistol", "label": "присед на одной", "value": 1, "unit": "повт", "dir": "up", "source": "exercise:Присед на одной с пола" },
+  { "key": "run5k", "label": "5 км", "value": 27.5, "unit": "мин", "dir": "down", "source": "exercise-minutes:Бег 5 км на время" }
  ]
 }

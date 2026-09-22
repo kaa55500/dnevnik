@@ -87,7 +87,7 @@ export function exerciseRow(ex) {
 }
 
 /** Отметки утреннего чек-ина, каждая с подписью. Пустые поля молчат. */
-function morningRows(day, settings) {
+function morningRows(day) {
   const out = [];
   if (!day) return out;
   if (has(day.sleepHours)) out.push({ label: 'сон', value: `${fmtWeight(day.sleepHours)} ч` });
@@ -98,8 +98,11 @@ function morningRows(day, settings) {
     out.push({ label: 'давление', value: `${day.bpSys}/${day.bpDia}` });
   }
   if (day.vacuum) out.push({ label: 'вакуум', value: 'да' });
-  for (const key of settings?.signals || ['headache']) {
-    if (day[key]) out.push({ label: SIGNALS[key] || key, value: 'да', alert: true });
+  // Печатается всё, что отмечено, а не то, что стоит в настройках: с Ц4
+  // состав сигналов задаёт план, а запись прошлого цикла несёт свои —
+  // отмеченный сигнал обязан быть виден при любом списке (правило 9).
+  for (const key of Object.keys(SIGNALS)) {
+    if (day[key]) out.push({ label: SIGNALS[key], value: 'да', alert: true });
   }
   return out;
 }
@@ -242,7 +245,7 @@ export function dayRecord(iso, ctx) {
     ...Object.entries((week && week.skipped) || {}),
   ].filter(([, v]) => v).map(([k]) => skipLabel(k)).sort();
 
-  const morning = morningRows(day, ctx.settings);
+  const morning = morningRows(day);
   const evening = eveningRows(day);
   const weekly = weekRows(iso, week);
 

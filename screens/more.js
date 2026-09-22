@@ -194,16 +194,15 @@ function menu(box, { weekId, settings, plan, plans }) {
 // ---------------------------------------------------------------
 function sectionWeek(box, w, weekId, plan) {
   box.append(el('p', { className: 'hint', textContent: `Неделя ${weekId}` }));
+  // Состав — ЦИКЛ-4.md §8 (22.09): талия читается предохранителем +3 см,
+  // шпагат и стойка — целями года, ккал и белок — воротами. Обхваты рук,
+  // голени, груди, бёдер и шеи снимаются раз в квартал в `ЗАМЕРЫ.md`;
+  // ходьба на руках до Ц9 не в программе — поле было бы вечной пустотой,
+  // цель остаётся слепой.
   const form = el('div', { className: 'grid' },
     numField('талия, см', 'waist', w, '0.5'),
-    numField('рука, см', 'arm', w, '0.5'),
-    numField('голень, см', 'calf', w, '0.5'),
-    numField('грудь, см', 'chest', w, '0.5'),
-    numField('бёдра, см', 'hips', w, '0.5'),
-    numField('шея, см', 'neck', w, '0.5'),
     numField('шпагат, см', 'splitGap', w, '0.5'),
     numField('стойка на руках, с', 'handstandSec', w, '1'),
-    numField('ходьба на руках, м', 'handstandWalk', w, '0.5'),
     numField('ккал ср. (FatSecret)', 'kcalAvg', w, '10'),
     numField('белок ср., г', 'proteinAvg', w, '5'),
     checkField('фото снято', 'photo', w),

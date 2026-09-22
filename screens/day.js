@@ -5,9 +5,9 @@ import {
 import { sessionsFor, weekOf, sessionDates, planRange } from '../plan.js';
 import { plannedSeconds, applySplit } from './stretch-block.js';
 import { CARDIO_TYPES } from './workout-logic.js';
-import { todayISO, weekdayShort, isoWeek, addDays, dm } from '../lib/dates.js';
+import { todayISO, weekdayShort, isoWeek, addDays, dm, fromISO } from '../lib/dates.js';
 import { parseNum } from '../lib/format.js';
-import { pendingTasks, closedTasks, debts, skipKeyOf, skipScopeOf, SIGNALS } from './day-logic.js';
+import { pendingTasks, closedTasks, debts, skipKeyOf, skipScopeOf, SIGNALS, signalsFor } from './day-logic.js';
 import { makeUnplannedWorkout, KIND_TITLE } from './workout-logic.js';
 import { dayRecord } from './journal-logic.js';
 import { renderRecord } from './record-view.js';
@@ -325,19 +325,35 @@ export async function render(box, params = {}) {
     }
 
     if (t.key === 'morning') {
+      // Состав полей — ЦИКЛ-4.md §8 «Логируется»: остаётся то, на что смотрит
+      // предохранитель или ворота. Самочувствие снято — его не читало ни одно
+      // правило. Пульс покоя — только понедельник (справочно), АД — только
+      // при сигнале «голова»: ежедневное давление — шум, а в день сигнала
+      // строка обязательна (§9), поэтому поля появляются по самой галочке.
+      const monday = fromISO(date).getDay() === 1;
+      const bp = () => el('div', { className: 'grid bp' },
+        field('давление верх', 'bpSys', day, '1'),
+        field('давление низ', 'bpDia', day, '1'));
+      const bpSlot = el('div', {}, (day.headache || day.bpSys != null) ? bp() : null);
       const form = el('div', { className: 'grid' },
         field('вес, кг', 'weight', day, '0.1'),
         field('сон, ч', 'sleepHours', day, '0.1'),
         field('качество сна 1–5', 'sleepQuality', day, '1'),
-        field('пульс покоя', 'restingHR', day, '1'),
-        field('самочувствие 1–5', 'wellbeing', day, '1'),
-        field('давление верх', 'bpSys', day, '1'),
-        field('давление низ', 'bpDia', day, '1'),
+        monday ? field('пульс покоя', 'restingHR', day, '1') : null,
         checkbox('вакуум', 'vacuum', day),
       );
-      for (const key of settings.signals || []) {
-        form.append(checkbox(SIGNALS[key] || key, key, day));
+      for (const key of signalsFor(plan, settings)) {
+        const box_ = checkbox(SIGNALS[key] || key, key, day);
+        if (key === 'headache') {
+          const input = box_.querySelector('input');
+          input.onchange = () => {
+            bpSlot.innerHTML = '';
+            if (input.checked || day.bpSys != null) bpSlot.append(bp());
+          };
+        }
+        form.append(box_);
       }
+      form.append(bpSlot);
       card.append(form, el('button', {
         className: 'save', textContent: 'Сохранить',
         onclick: async () => {
@@ -421,10 +437,10 @@ export async function render(box, params = {}) {
     }
 
     if (t.key === 'evening') {
+      // TKE и МФР сняты 22.09 (ЦИКЛ-4.md §8): колено чисто с августа,
+      // профилактика живёт в разминке и растяжке, галочки не читал никто.
       const form = el('div', { className: 'grid' },
         field('ходьба, км', 'walkKm', day, '0.1'),
-        checkbox('TKE', 'tke', day),
-        checkbox('МФР', 'mfr', day),
       );
       card.append(form, cardioBlock(day, box, save), el('button', {
         className: 'save', textContent: 'Сохранить',
@@ -439,7 +455,7 @@ export async function render(box, params = {}) {
 
     if (t.key === 'week') {
       card.append(
-        el('p', { textContent: 'Ккал и белок за неделю, стойка, ходьба на руках, обхваты.' }),
+        el('p', { textContent: 'Ккал и белок за неделю, стойка, талия, шпагат.' }),
         el('button', {
           className: 'go', textContent: 'Открыть',
           // Раздел называется явно: без него «Ещё» открывалось корневым

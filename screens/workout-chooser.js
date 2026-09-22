@@ -118,16 +118,18 @@ export async function chooser(box, iso) {
   for (const week of weeks) {
     const rows = [];
     for (const day of week.days || []) {
-      for (const s of day.sessions || []) {
-        if (s.kind === 'mobility') continue;
+      (day.sessions || []).forEach((s, i) => {
+        if (s.kind === 'mobility') return;
         rows.push({
-          date: day.date, kind: s.kind, code: s.code,
+          date: day.date, kind: s.kind, code: s.code, i,
           count: (s.exercises || []).length,
         });
-      }
+      });
     }
     if (!rows.length) continue;
-    rows.sort((a, b) => a.date.localeCompare(b.date) || a.kind.localeCompare(b.kind));
+    // Внутри даты — порядок плана, не имени вида: во вторник Ц4 навык идёт
+    // раньше гребли, а «cardio» по алфавиту вставал бы первым.
+    rows.sort((a, b) => a.date.localeCompare(b.date) || a.i - b.i);
 
     const dates = rows.map((r) => r.date).sort();
     const from = dates[0];
