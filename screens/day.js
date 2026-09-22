@@ -227,13 +227,16 @@ export async function render(box, params = {}) {
   }
 
   // ---------- Долги ----------
-  // Даты берутся из всех циклов, а не только из текущего. 21.09 стартует Ц4,
-  // и до заливки его плана `getPlan` на этой дате вернёт null: раньше вместе
-  // с ним молча гас весь блок, и несданные вес и сон за Ц3 просто исчезали
-  // с экрана — не закрытые, а невидимые.
+  // Даты берутся из всех циклов, но считаются в границах цикла, покрывающего
+  // сегодня: долги закрытого цикла не висят (22.09 — семь дней Ц3 без веса
+  // и сна тянулись в Ц4). Если на сегодня плана нет — границ нет, и долги
+  // прошлого цикла остаются видны: иначе в промежутке между циклами блок
+  // гас бы молча, и несданное исчезало — не закрытое, а невидимое.
   if (!backdated) {
     const allDates = plans.flatMap((p) => sessionDates(p));
-    const owed = debts({ today, dates: [...new Set(allDates)].sort(), days, weeks });
+    const current = plans.find((p) => { const r = planRange(p); return r && today >= r.from && today <= r.to; });
+    const range = current ? planRange(current) : {};
+    const owed = debts({ today, dates: [...new Set(allDates)].sort(), days, weeks, from: range.from, to: range.to });
     if (owed.length) {
       const card = el('section', { className: 'card debts' },
         el('h2', { textContent: `Не закрыто: ${owed.length}` }));

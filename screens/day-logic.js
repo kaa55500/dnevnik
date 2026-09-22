@@ -219,6 +219,10 @@ export function debts(ctx) {
 
   for (const date of ctx.dates || []) {
     if (date >= ctx.today) continue;
+    // Границы активного цикла: долги закрытого не висят — данных за них
+    // уже не будет, а его ведение разобрано в итоге цикла (22.09).
+    if (ctx.from && date < ctx.from) continue;
+    if (ctx.to && date > ctx.to) continue;
     const d = days.get(date) || {};
     const w = weeks.get(isoWeek(date)) || {};
 
