@@ -115,15 +115,16 @@
          "kind": "strength"
         },
         {
-         "name": "Махи в стороны стоя",
+         "name": "Махи в стороны в кроссовере",
          "alt": [
-          "в кроссовере"
+          "гантели"
          ],
          "sets": 4,
-         "reps": "12",
-         "weight": "12 кг",
+         "reps": "15",
+         "weight": "9 кг",
          "rest": 90,
          "kind": "strength",
+         "machine": "Kraft Fitness",
          "perSide": true
         },
         {
@@ -849,15 +850,16 @@
          "kind": "strength"
         },
         {
-         "name": "Махи в стороны стоя",
+         "name": "Махи в стороны в кроссовере",
          "alt": [
-          "в кроссовере"
+          "гантели"
          ],
          "sets": 4,
-         "reps": "12",
-         "weight": "13 кг",
+         "reps": "15",
+         "weight": "9 кг",
          "rest": 90,
          "kind": "strength",
+         "machine": "Kraft Fitness",
          "perSide": true
         },
         {
@@ -1583,16 +1585,17 @@
          "kind": "strength"
         },
         {
-         "name": "Махи в стороны стоя",
+         "name": "Махи в стороны в кроссовере",
          "alt": [
-          "в кроссовере"
+          "гантели"
          ],
          "sets": 4,
-         "reps": "12",
-         "weight": "14 кг",
+         "reps": "20",
+         "weight": "9 кг",
          "rest": 90,
          "note": "калибровка: последний подход до истинного отказа, заметка «отказ, N повторов»",
          "kind": "strength",
+         "machine": "Kraft Fitness",
          "perSide": true
         },
         {
@@ -2319,15 +2322,16 @@
          "kind": "strength"
         },
         {
-         "name": "Махи в стороны стоя",
+         "name": "Махи в стороны в кроссовере",
          "alt": [
-          "в кроссовере"
+          "гантели"
          ],
          "sets": 4,
-         "reps": "12",
-         "weight": "15 кг",
+         "reps": "10",
+         "weight": "14 кг",
          "rest": 90,
          "kind": "strength",
+         "machine": "Kraft Fitness",
          "perSide": true
         },
         {
