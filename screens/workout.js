@@ -124,6 +124,18 @@ function stopClock() {
 }
 
 /**
+ * Остаток отдыха и его плановая длина: «1:12 из 3:00». Хвост «из» — мелким
+ * кеглем: цифры таймера набраны огромными, и двенадцать знаков в одну
+ * строку не влезают в ширину телефона.
+ */
+function paintRest(label, left) {
+  label.textContent = left != null ? fmtRest(left) : '';
+  if (left != null && state.restPlan) {
+    label.append(el('span', { className: 'wk-rest-of', textContent: ` из ${fmtRest(state.restPlan)}` }));
+  }
+}
+
+/**
  * Отсчёт отдыха. Через ноль таймер не останавливается, а уходит в минус:
  * замершие 00:00 говорили только «время вышло», а между подходами нужен
  * ответ на другой вопрос — сколько ты уже стоишь. Потолка у минуса нет,
@@ -929,7 +941,9 @@ async function draw(box) {
   const shortReps = /^[\d\s–—-]+$/.test(String(presc.reps ?? ''));
   const planLine = `план ${presc.sets}${shortReps ? '×' : ' × '}${presc.reps}`
     + (presc.rpe != null ? ` · RPE ${fmtNum(presc.rpe, 1)}` : '')
-    + (presc.weight ? ` · ${presc.weight}` : '');
+    + (presc.weight ? ` · ${presc.weight}` : '')
+    // Плановый отдых виден до подхода, а не только таймером после него.
+    + (presc.rest > 0 ? ` · отдых ${fmtDuration(presc.rest)}` : '');
 
   // Полоса меряется подходами, а не упражнениями: по упражнениям она стояла
   // на нуле всё первое из них, и пустой трек читался разделителем, а не шкалой.
@@ -971,6 +985,9 @@ async function draw(box) {
       },
     }),
     el('h2', { textContent: ex.replacedWith || ex.name }),
+    // Зона усилия — из плана (ЦИКЛ-4.md §4, пишет генератор цикла): класс
+    // упражнения меняется вместе с циклом, в коде его нет.
+    presc.zone ? el('div', { className: 'wk-zone', textContent: presc.zone }) : null,
     presc.unplanned || ex.unplanned
       ? el('div', { className: 'wk-plan', textContent: 'вне плана' })
       : el('div', { className: 'wk-plan', textContent: planLine }),
@@ -1181,10 +1198,11 @@ async function draw(box) {
     // Отдых руками: в режиме «потом» он единственный источник цифры,
     // в режиме «сейчас» — способ поправить измеренное.
     const restWas = editing && editing.rest != null ? String(editing.rest) : '';
-    // Отдых пишется там же, где RPE (ЦИКЛ-4.md §8): четыре лифта и брусья.
-    // На подсобке цифра не читалась ни одним правилом, а поле стояло у каждого
-    // подхода. Плановый `rest` остаётся подсказкой между подходами.
-    const restInput = cardio || !asksRPE ? null : el('input', {
+    // Отдых — у всех силовых, кроме навыков (решение 23.09): там критерий —
+    // форма, а не восстановление. На пяти лифтах с RPE цифра читается
+    // правилами, на остальных она справочная. План Ц3 классов не знает —
+    // там поле стоит у всего силового.
+    const restInput = cardio || presc.zoneClass === 'skill' ? null : el('input', {
       type: 'number', step: '5', inputMode: 'numeric', className: 'wk-restin',
       value: restWas,
       // Плейсхолдер живёт в поле с кеглем 34 px: «по секундомеру» не влезало
@@ -1381,6 +1399,7 @@ async function draw(box) {
         // Отдых закрыт — следующая метка начала подхода ставится заново.
         state.setStartedAt = null;
         const seconds = presc.rest || 90;
+        state.restPlan = seconds;
         await draw(box);
         if (mode === 'live') {
           // Метка ищется на каждом тике: после перерисовки ссылка в замыкании
@@ -1388,7 +1407,7 @@ async function draw(box) {
           startTimer(seconds, (left) => {
             const label = box.querySelector('.wk-rest');
             if (!label) return;
-            label.textContent = fmtRest(left);
+            paintRest(label, left);
             label.classList.toggle('over', left <= 0);
           });
         }
@@ -1416,12 +1435,13 @@ async function draw(box) {
    * в момент, когда цифра появляется. Пустота между кнопкой и очередью —
    * плата за неподвижность строки кнопок, а не недосмотр.
    */
-  box.append(el('div', {
+  const restBox = el('div', {
     // Перерисовка на живом таймере (заметка, замена) не должна терять признак
     // перебора: класс ставится не только тиком, но и самой разметкой.
     className: 'wk-rest' + (state.restLeft != null && state.restLeft <= 0 ? ' over' : ''),
-    textContent: state.restLeft != null ? fmtRest(state.restLeft) : '',
-  }));
+  });
+  paintRest(restBox, state.restLeft);
+  box.append(restBox);
 
   // Очередь: три ближайших невзятых упражнения. Видно, сколько осталось,
   // без разворачивания всего плана.
@@ -1499,7 +1519,19 @@ async function draw(box) {
     el('button', {
       className: state.textEdit === 'skip' ? 'on' : '',
       textContent: 'пропуск',
-      onclick: () => { state.textEdit = state.textEdit === 'skip' ? null : 'skip'; return draw(box); },
+      // У бонуса причина всегда одна — «это доп», и спрашивать её — пустой
+      // шаг (решение 23.09). На основных причину читает разбор план-факт.
+      onclick: async () => {
+        if (presc.optional) {
+          ex.skipped = true;
+          ex.skipReason = 'доп';
+          if (!(await save(box))) return;
+          state.textEdit = null;
+          return afterTextEdit(box, 'skip');
+        }
+        state.textEdit = state.textEdit === 'skip' ? null : 'skip';
+        return draw(box);
+      },
     }),
     el('button', {
       textContent: '→',

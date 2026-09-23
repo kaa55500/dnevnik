@@ -560,6 +560,17 @@ ol.wk-sets li.warm { opacity: 0.5; }
   color: var(--ink);
 }
 .wk-rest.over { color: var(--good); }
+.wk-rest-of {
+  font-size: var(--t-sm);
+  letter-spacing: 0;
+  color: var(--muted);
+}
+.wk-zone {
+  margin: 2px 0 4px;
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--accent);
+}
 
 /* Две ссылки ухода: строчные кнопки помещались в одну строку и слипались
    без пробела. Раскладка та же, что у `.day-links` на экране дня. */

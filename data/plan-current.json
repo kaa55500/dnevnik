@@ -77,7 +77,9 @@
          "weight": "95 кг",
          "rpe": 8,
          "rest": 180,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "lift",
+         "zone": "RPE 7–8 · 2–3 в запасе"
         },
         {
          "name": "Брусья с весом, вертик. корпус",
@@ -90,7 +92,9 @@
          "rpe": 9,
          "rest": 150,
          "note": "десять повторов и не ниже — локти; сигнал по правой груди — заметкой (§9.3)",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "dips",
+         "zone": "RPE 9 · 1 в запасе"
         },
         {
          "name": "Наклонный жим штанги 30°",
@@ -101,7 +105,9 @@
          "reps": "8",
          "weight": "70 кг",
          "rest": 150,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "assist",
+         "zone": "RPE 8 · 2 в запасе"
         },
         {
          "name": "Вертикальная тяга блока",
@@ -112,7 +118,9 @@
          "reps": "10",
          "weight": "55 кг",
          "rest": 150,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "assist",
+         "zone": "RPE 8 · 2 в запасе"
         },
         {
          "name": "Махи в стороны в кроссовере",
@@ -124,6 +132,8 @@
          "weight": "9 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "machine": "Kraft Fitness",
          "perSide": true
         },
@@ -136,7 +146,9 @@
          "reps": "10, пауза 2 с",
          "weight": "вес тела",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         },
         {
          "name": "Стойка лицом к стене — блок 2 мин",
@@ -148,7 +160,9 @@
          "weight": "вес тела",
          "rest": 30,
          "note": "последним — ТОЛЬКО ПОСЛЕ СКРИНИНГА ВГД (§9.2); до него — пропуск",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Махи в стороны — бонус 120 %",
@@ -163,6 +177,8 @@
          "plus": "бонус 120 %",
          "note": "допуск: сон ≥ 7 ч и качество ≥ 3 · RPE в коридоре · сигналы по нулям · не два дня подряд",
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "perSide": true
         }
        ],
@@ -232,7 +248,9 @@
          "reps": "удержание 30 с; последние 2 — отход от стены, секунды в недельную строку",
          "weight": "вес тела",
          "rest": 30,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Отжимания у стены — стопка",
@@ -243,7 +261,9 @@
          "reps": "5",
          "weight": "стопка ~15 см, кисти 1,3× плеч",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Выход силой",
@@ -254,7 +274,9 @@
          "reps": "3",
          "weight": "вес тела",
          "rest": 120,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Подъём коленей в висе — под носки",
@@ -265,7 +287,9 @@
          "reps": "8",
          "weight": "колени к груди",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Вис на грипсах-грушах",
@@ -277,7 +301,9 @@
          "reps": "удержание 30 с",
          "weight": "вес тела",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         },
         {
          "name": "Голеностоп: выпад к стене с нажимом",
@@ -289,6 +315,8 @@
          "weight": "вес тела",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE",
          "perSide": true
         }
        ]
@@ -375,7 +403,9 @@
          "rpe": 7.5,
          "rest": 180,
          "note": "ступенчатая разминка 60 · 100 · 120 · 140 по 3–5 без лямок, выдох на подъёме; еда до сессии обязательна (§9.1)",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "lift",
+         "zone": "RPE 7–8 · 2–3 в запасе"
         },
         {
          "name": "Присед на одной на возвышение",
@@ -386,7 +416,9 @@
          "reps": "5/ногу",
          "weight": "высота 40 см",
          "rest": 150,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "assist",
+         "zone": "RPE 8 · 2 в запасе"
         },
         {
          "name": "Казачий присед",
@@ -399,6 +431,8 @@
          "rest": 90,
          "note": "правое колено и голеностоп — место прошлой травмы (§9.5): дискомфорт — сигнал «колено» в чек-ине",
          "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE",
          "perSide": true
         },
         {
@@ -410,7 +444,9 @@
          "reps": "6 + статика 15 с в конце каждого",
          "weight": "с колен, полная амплитуда",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Боковая планка с подъёмом верхней ноги",
@@ -421,7 +457,9 @@
          "reps": "удержание 30 с/ст",
          "weight": "вес тела",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         },
         {
          "name": "Косые в висе — колени в сторону",
@@ -432,7 +470,9 @@
          "reps": "10/ст",
          "weight": "вес тела",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         },
         {
          "name": "Икры стоя — последний подход частичные внизу",
@@ -445,6 +485,8 @@
          "weight": "65 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "machine": "Hoist HD1610"
         },
         {
@@ -459,7 +501,9 @@
          "optional": true,
          "plus": "бонус 120 %",
          "note": "допуск: сон ≥ 7 ч и качество ≥ 3 · RPE в коридоре · сигналы по нулям · не два дня подряд",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         }
        ],
        "bonus": {
@@ -530,7 +574,9 @@
          "rpe": 8,
          "rest": 180,
          "note": "два сигнала усталости плеча → режется первой, до жима и махов (§9.4)",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "lift",
+         "zone": "RPE 7–8 · 2–3 в запасе"
         },
         {
          "name": "Жим гантелей наклон 30°",
@@ -543,6 +589,8 @@
          "rest": 150,
          "note": "первый подход разминочный на 16–18; глубина — локоть на уровне плеча, не ниже (§9.3)",
          "kind": "strength",
+         "zoneClass": "assist",
+         "zone": "RPE 8 · 2 в запасе",
          "perSide": true
         },
         {
@@ -555,6 +603,8 @@
          "weight": "12 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "perSide": true
         },
         {
@@ -567,6 +617,8 @@
          "weight": "12 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "perSide": true
         },
         {
@@ -579,7 +631,9 @@
          "weight": "20 кг, канат",
          "rest": 90,
          "note": "пятая нагрузка на локоть в неделю — лёгкий вес, последним из железа; при сигнале «локоть» снимается первым",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         },
         {
          "name": "Икры стоя — последний подход частичные внизу",
@@ -591,6 +645,8 @@
          "weight": "65 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "machine": "Hoist HD1610"
         },
         {
@@ -602,7 +658,9 @@
          "reps": "удержание 30 с",
          "weight": "вес тела",
          "rest": 30,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         }
        ],
        "bonus": null
@@ -669,7 +727,9 @@
          "weight": "+32 кг",
          "rpe": 7.5,
          "rest": 180,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "lift",
+         "zone": "RPE 7–8 · 2–3 в запасе"
         },
         {
          "name": "Рычажная тяга с упором в грудь",
@@ -681,6 +741,8 @@
          "weight": "65 кг",
          "rest": 150,
          "kind": "strength",
+         "zoneClass": "assist",
+         "zone": "RPE 8 · 2 в запасе",
          "perSide": true
         },
         {
@@ -692,7 +754,9 @@
          "reps": "15",
          "weight": "20 кг",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         },
         {
          "name": "Разворот гири на полу (ротация предплечья)",
@@ -705,6 +769,8 @@
          "weight": "10 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "perSide": true
         },
         {
@@ -717,6 +783,8 @@
          "weight": "14 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "perSide": true
         },
         {
@@ -728,7 +796,9 @@
          "reps": "удержание 15 с",
          "weight": "паралеты, без упора тазом",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Стойка лицом к стене — блок 4 мин",
@@ -739,7 +809,9 @@
          "reps": "удержание 30 с",
          "weight": "вес тела",
          "rest": 30,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         }
        ],
        "bonus": null
@@ -812,7 +884,9 @@
          "weight": "105 кг",
          "rpe": 8,
          "rest": 180,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "lift",
+         "zone": "RPE 7–8 · 2–3 в запасе"
         },
         {
          "name": "Брусья с весом, вертик. корпус",
@@ -825,7 +899,9 @@
          "rpe": 9,
          "rest": 150,
          "note": "десять повторов и не ниже — локти; сигнал по правой груди — заметкой (§9.3)",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "dips",
+         "zone": "RPE 9 · 1 в запасе"
         },
         {
          "name": "Наклонный жим штанги 30°",
@@ -836,7 +912,9 @@
          "reps": "8",
          "weight": "72,5 кг",
          "rest": 150,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "assist",
+         "zone": "RPE 8 · 2 в запасе"
         },
         {
          "name": "Вертикальная тяга блока",
@@ -847,7 +925,9 @@
          "reps": "10",
          "weight": "58 кг",
          "rest": 150,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "assist",
+         "zone": "RPE 8 · 2 в запасе"
         },
         {
          "name": "Махи в стороны в кроссовере",
@@ -859,6 +939,8 @@
          "weight": "9 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "machine": "Kraft Fitness",
          "perSide": true
         },
@@ -871,7 +953,9 @@
          "reps": "12, пауза 2 с",
          "weight": "вес тела",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         },
         {
          "name": "Стойка лицом к стене — блок 2 мин",
@@ -883,7 +967,9 @@
          "weight": "вес тела",
          "rest": 30,
          "note": "последним — ТОЛЬКО ПОСЛЕ СКРИНИНГА ВГД (§9.2); до него — пропуск",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Махи в стороны — бонус 120 %",
@@ -898,6 +984,8 @@
          "plus": "бонус 120 %",
          "note": "допуск: сон ≥ 7 ч и качество ≥ 3 · RPE в коридоре · сигналы по нулям · не два дня подряд",
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "perSide": true
         }
        ],
@@ -967,7 +1055,9 @@
          "reps": "удержание 30 с; последние 2 — отход от стены, секунды в недельную строку",
          "weight": "вес тела",
          "rest": 30,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Отжимания у стены — стопка",
@@ -978,7 +1068,9 @@
          "reps": "5",
          "weight": "стопка ~10 см, кисти 1,2× плеч",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Выход силой",
@@ -989,7 +1081,9 @@
          "reps": "3",
          "weight": "вес тела",
          "rest": 120,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Подъём коленей в висе — под носки",
@@ -1000,7 +1094,9 @@
          "reps": "8",
          "weight": "колени к локтям",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Вис на грипсах-грушах",
@@ -1012,7 +1108,9 @@
          "reps": "удержание 35 с",
          "weight": "вес тела",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         },
         {
          "name": "Голеностоп: выпад к стене с нажимом",
@@ -1024,6 +1122,8 @@
          "weight": "вес тела",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE",
          "perSide": true
         }
        ]
@@ -1109,7 +1209,9 @@
          "rpe": 8,
          "rest": 180,
          "note": "ступенчатая разминка 60 · 100 · 120 · 140 по 3–5 без лямок, выдох на подъёме; еда до сессии обязательна (§9.1)",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "lift",
+         "zone": "RPE 7–8 · 2–3 в запасе"
         },
         {
          "name": "Присед на одной на возвышение",
@@ -1120,7 +1222,9 @@
          "reps": "5/ногу",
          "weight": "высота 35 см",
          "rest": 150,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "assist",
+         "zone": "RPE 8 · 2 в запасе"
         },
         {
          "name": "Казачий присед",
@@ -1133,6 +1237,8 @@
          "rest": 90,
          "note": "правое колено и голеностоп — место прошлой травмы (§9.5): дискомфорт — сигнал «колено» в чек-ине",
          "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE",
          "perSide": true
         },
         {
@@ -1144,7 +1250,9 @@
          "reps": "5",
          "weight": "колени на возвышении",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Боковая планка с подъёмом верхней ноги",
@@ -1155,7 +1263,9 @@
          "reps": "удержание 35 с/ст",
          "weight": "вес тела",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         },
         {
          "name": "Косые в висе — колени в сторону",
@@ -1166,7 +1276,9 @@
          "reps": "10/ст",
          "weight": "вес тела",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         },
         {
          "name": "Икры стоя — последний подход частичные внизу",
@@ -1179,6 +1291,8 @@
          "weight": "70 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "machine": "Hoist HD1610"
         },
         {
@@ -1193,7 +1307,9 @@
          "optional": true,
          "plus": "бонус 120 %",
          "note": "допуск: сон ≥ 7 ч и качество ≥ 3 · RPE в коридоре · сигналы по нулям · не два дня подряд",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         }
        ],
        "bonus": {
@@ -1264,7 +1380,9 @@
          "rpe": 8,
          "rest": 180,
          "note": "два сигнала усталости плеча → режется первой, до жима и махов (§9.4)",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "lift",
+         "zone": "RPE 7–8 · 2–3 в запасе"
         },
         {
          "name": "Жим гантелей наклон 30°",
@@ -1277,6 +1395,8 @@
          "rest": 150,
          "note": "первый подход разминочный на 16–18; глубина — локоть на уровне плеча, не ниже (§9.3)",
          "kind": "strength",
+         "zoneClass": "assist",
+         "zone": "RPE 8 · 2 в запасе",
          "perSide": true
         },
         {
@@ -1289,6 +1409,8 @@
          "weight": "13 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "perSide": true
         },
         {
@@ -1301,6 +1423,8 @@
          "weight": "12 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "perSide": true
         },
         {
@@ -1313,7 +1437,9 @@
          "weight": "22 кг, канат",
          "rest": 90,
          "note": "пятая нагрузка на локоть в неделю — лёгкий вес, последним из железа; при сигнале «локоть» снимается первым",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         },
         {
          "name": "Икры стоя — последний подход частичные внизу",
@@ -1325,6 +1451,8 @@
          "weight": "70 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "machine": "Hoist HD1610"
         },
         {
@@ -1336,7 +1464,9 @@
          "reps": "удержание 30 с",
          "weight": "вес тела",
          "rest": 30,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         }
        ],
        "bonus": null
@@ -1403,7 +1533,9 @@
          "weight": "+32 кг",
          "rpe": 8,
          "rest": 180,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "lift",
+         "zone": "RPE 7–8 · 2–3 в запасе"
         },
         {
          "name": "Рычажная тяга с упором в грудь",
@@ -1415,6 +1547,8 @@
          "weight": "70 кг",
          "rest": 150,
          "kind": "strength",
+         "zoneClass": "assist",
+         "zone": "RPE 8 · 2 в запасе",
          "perSide": true
         },
         {
@@ -1426,7 +1560,9 @@
          "reps": "15",
          "weight": "22 кг",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         },
         {
          "name": "Разворот гири на полу (ротация предплечья)",
@@ -1439,6 +1575,8 @@
          "weight": "12 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "perSide": true
         },
         {
@@ -1451,6 +1589,8 @@
          "weight": "14 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "perSide": true
         },
         {
@@ -1462,7 +1602,9 @@
          "reps": "удержание 20 с",
          "weight": "паралеты, без упора тазом",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Стойка лицом к стене — блок 4 мин",
@@ -1473,7 +1615,9 @@
          "reps": "удержание 30 с",
          "weight": "вес тела",
          "rest": 30,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         }
        ],
        "bonus": null
@@ -1544,10 +1688,12 @@
          "sets": 3,
          "reps": "5",
          "weight": "107,5 кг",
+         "zone": "RPE 8,5 · верх коридора, 1–2 в запасе",
          "rpe": 8.5,
          "rest": 180,
          "note": "три подхода на 86 %: третий снимается при RPE 9,5 на втором (§9.6)",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "lift"
         },
         {
          "name": "Брусья с весом, вертик. корпус",
@@ -1560,7 +1706,9 @@
          "rpe": 9,
          "rest": 150,
          "note": "десять повторов и не ниже — локти; сигнал по правой груди — заметкой (§9.3)",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "dips",
+         "zone": "RPE 9 · 1 в запасе"
         },
         {
          "name": "Наклонный жим штанги 30°",
@@ -1571,7 +1719,9 @@
          "reps": "8",
          "weight": "75 кг",
          "rest": 150,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "assist",
+         "zone": "RPE 8 · 2 в запасе"
         },
         {
          "name": "Вертикальная тяга блока",
@@ -1582,7 +1732,9 @@
          "reps": "10",
          "weight": "61 кг",
          "rest": 150,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "assist",
+         "zone": "RPE 8 · 2 в запасе"
         },
         {
          "name": "Махи в стороны в кроссовере",
@@ -1592,9 +1744,11 @@
          "sets": 4,
          "reps": "20",
          "weight": "9 кг",
+         "zone": "последний подход — до истинного отказа",
          "rest": 90,
          "note": "калибровка: последний подход до истинного отказа, заметка «отказ, N повторов»",
          "kind": "strength",
+         "zoneClass": "iso",
          "machine": "Kraft Fitness",
          "perSide": true
         },
@@ -1607,7 +1761,9 @@
          "reps": "12, пауза 2 с",
          "weight": "вес тела",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         },
         {
          "name": "Стойка лицом к стене — блок 2 мин",
@@ -1619,7 +1775,9 @@
          "weight": "вес тела",
          "rest": 30,
          "note": "последним — ТОЛЬКО ПОСЛЕ СКРИНИНГА ВГД (§9.2); до него — пропуск",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Махи в стороны — бонус 120 %",
@@ -1634,6 +1792,8 @@
          "plus": "бонус 120 %",
          "note": "допуск: сон ≥ 7 ч и качество ≥ 3 · RPE в коридоре · сигналы по нулям · не два дня подряд",
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "perSide": true
         }
        ],
@@ -1703,7 +1863,9 @@
          "reps": "удержание 30 с; последние 2 — отход от стены, секунды в недельную строку",
          "weight": "вес тела",
          "rest": 30,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Отжимания у стены — стопка",
@@ -1715,7 +1877,9 @@
          "weight": "стопка ~5 см, кисти 1,1× плеч",
          "rest": 90,
          "note": "ТОЛЬКО ПРИ ВГД до 04.10 — иначе не идут, стойка остаётся (§9.2)",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Выход силой",
@@ -1726,7 +1890,9 @@
          "reps": "3 (пятый подход — 1)",
          "weight": "вес тела",
          "rest": 120,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Подъём коленей в висе — под носки",
@@ -1737,7 +1903,9 @@
          "reps": "6",
          "weight": "ноги в уголок",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Вис на грипсах-грушах",
@@ -1749,7 +1917,9 @@
          "reps": "удержание 40 с",
          "weight": "вес тела",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         },
         {
          "name": "Голеностоп: выпад к стене с нажимом",
@@ -1761,6 +1931,8 @@
          "weight": "вес тела",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE",
          "perSide": true
         }
        ]
@@ -1846,7 +2018,9 @@
          "rpe": 8,
          "rest": 180,
          "note": "ступенчатая разминка 60 · 100 · 120 · 140 по 3–5 без лямок, выдох на подъёме; еда до сессии обязательна (§9.1)",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "lift",
+         "zone": "RPE 7–8 · 2–3 в запасе"
         },
         {
          "name": "Присед на одной на возвышение",
@@ -1857,7 +2031,9 @@
          "reps": "5/ногу",
          "weight": "высота 30 см",
          "rest": 150,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "assist",
+         "zone": "RPE 8 · 2 в запасе"
         },
         {
          "name": "Казачий присед",
@@ -1870,6 +2046,8 @@
          "rest": 90,
          "note": "правое колено и голеностоп — место прошлой травмы (§9.5): дискомфорт — сигнал «колено» в чек-ине",
          "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE",
          "perSide": true
         },
         {
@@ -1881,7 +2059,9 @@
          "reps": "6",
          "weight": "колени на возвышении",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Боковая планка с подъёмом верхней ноги",
@@ -1892,7 +2072,9 @@
          "reps": "удержание 40 с/ст",
          "weight": "вес тела",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         },
         {
          "name": "Косые в висе — колени в сторону",
@@ -1903,7 +2085,9 @@
          "reps": "12/ст",
          "weight": "вес тела",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         },
         {
          "name": "Икры стоя — последний подход частичные внизу",
@@ -1916,6 +2100,8 @@
          "weight": "75 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "machine": "Hoist HD1610"
         },
         {
@@ -1930,7 +2116,9 @@
          "optional": true,
          "plus": "бонус 120 %",
          "note": "допуск: сон ≥ 7 ч и качество ≥ 3 · RPE в коридоре · сигналы по нулям · не два дня подряд",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         }
        ],
        "bonus": {
@@ -2001,7 +2189,9 @@
          "rpe": 8,
          "rest": 180,
          "note": "два сигнала усталости плеча → режется первой, до жима и махов (§9.4)",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "lift",
+         "zone": "RPE 7–8 · 2–3 в запасе"
         },
         {
          "name": "Жим гантелей наклон 30°",
@@ -2014,6 +2204,8 @@
          "rest": 150,
          "note": "первый подход разминочный на 16–18; глубина — локоть на уровне плеча, не ниже (§9.3)",
          "kind": "strength",
+         "zoneClass": "assist",
+         "zone": "RPE 8 · 2 в запасе",
          "perSide": true
         },
         {
@@ -2026,6 +2218,8 @@
          "weight": "14 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "perSide": true
         },
         {
@@ -2038,6 +2232,8 @@
          "weight": "14 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "perSide": true
         },
         {
@@ -2050,7 +2246,9 @@
          "weight": "24 кг, канат",
          "rest": 90,
          "note": "пятая нагрузка на локоть в неделю — лёгкий вес, последним из железа; при сигнале «локоть» снимается первым",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         },
         {
          "name": "Икры стоя — последний подход частичные внизу",
@@ -2062,6 +2260,8 @@
          "weight": "75 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "machine": "Hoist HD1610"
         },
         {
@@ -2073,7 +2273,9 @@
          "reps": "удержание 30 с",
          "weight": "вес тела",
          "rest": 30,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         }
        ],
        "bonus": null
@@ -2140,7 +2342,9 @@
          "weight": "+32 кг",
          "rpe": 8,
          "rest": 180,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "lift",
+         "zone": "RPE 7–8 · 2–3 в запасе"
         },
         {
          "name": "Рычажная тяга с упором в грудь",
@@ -2152,6 +2356,8 @@
          "weight": "72,5 кг",
          "rest": 150,
          "kind": "strength",
+         "zoneClass": "assist",
+         "zone": "RPE 8 · 2 в запасе",
          "perSide": true
         },
         {
@@ -2163,7 +2369,9 @@
          "reps": "15",
          "weight": "24 кг",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         },
         {
          "name": "Разворот гири на полу (ротация предплечья)",
@@ -2176,6 +2384,8 @@
          "weight": "12 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "perSide": true
         },
         {
@@ -2188,6 +2398,8 @@
          "weight": "16 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "perSide": true
         },
         {
@@ -2199,7 +2411,9 @@
          "reps": "удержание 15 с",
          "weight": "низкие паралеты",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Стойка лицом к стене — блок 4 мин",
@@ -2210,7 +2424,9 @@
          "reps": "удержание 30 с",
          "weight": "вес тела",
          "rest": 30,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         }
        ],
        "bonus": null
@@ -2284,7 +2500,9 @@
          "rest": 180,
          "note": "страховка обязательна, RPE до 9,5, не 10; 4 повтора при 9,5 — тоже результат; мишень не пишется",
          "control": true,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "lift",
+         "zone": "контроль · что выйдет"
         },
         {
          "name": "Брусья с весом, вертик. корпус",
@@ -2297,7 +2515,9 @@
          "rpe": 9,
          "rest": 150,
          "note": "десять повторов и не ниже — локти; сигнал по правой груди — заметкой (§9.3)",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "dips",
+         "zone": "RPE 9 · 1 в запасе"
         },
         {
          "name": "Наклонный жим штанги 30°",
@@ -2308,7 +2528,9 @@
          "reps": "8",
          "weight": "77,5 кг",
          "rest": 150,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "assist",
+         "zone": "RPE 8 · 2 в запасе"
         },
         {
          "name": "Вертикальная тяга блока",
@@ -2319,7 +2541,9 @@
          "reps": "10",
          "weight": "64 кг",
          "rest": 150,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "assist",
+         "zone": "RPE 8 · 2 в запасе"
         },
         {
          "name": "Махи в стороны в кроссовере",
@@ -2331,6 +2555,8 @@
          "weight": "14 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "machine": "Kraft Fitness",
          "perSide": true
         },
@@ -2343,7 +2569,9 @@
          "reps": "12, пауза 2 с",
          "weight": "вес тела",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         },
         {
          "name": "Махи в стороны — бонус 120 %",
@@ -2358,6 +2586,8 @@
          "plus": "бонус 120 %",
          "note": "допуск: сон ≥ 7 ч и качество ≥ 3 · RPE в коридоре · сигналы по нулям · не два дня подряд",
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "perSide": true
         }
        ],
@@ -2427,7 +2657,9 @@
          "reps": "удержание 30 с; последние 2 — отход от стены, секунды в недельную строку",
          "weight": "вес тела",
          "rest": 30,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Отжимания в стойке у стены — КОНТРОЛЬ (только Н4)",
@@ -2440,7 +2672,9 @@
          "rest": 90,
          "note": "ТОЛЬКО ПРИ ВГД до 04.10 — иначе контроль снят, стойка; сравнение с 13.09 (1 полный)",
          "control": true,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "контроль · что выйдет"
         },
         {
          "name": "Отжимания у стены — стопка",
@@ -2452,7 +2686,9 @@
          "weight": "стопка ~5 см, кисти 1,1× плеч",
          "rest": 90,
          "note": "после контроля; ТОЛЬКО ПРИ ВГД до 04.10",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Выход силой",
@@ -2465,7 +2701,9 @@
          "rest": 120,
          "note": "зал, не уличный турник; без раскачки",
          "control": true,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "контроль · что выйдет"
         },
         {
          "name": "Носки к перекладине — КОНТРОЛЬ",
@@ -2478,7 +2716,9 @@
          "rest": 90,
          "note": "кроссфит-стиль, раскачка можно, счёт до первой остановки; ноль — валидная запись",
          "control": true,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "контроль · что выйдет"
         },
         {
          "name": "Подъём коленей в висе — под носки",
@@ -2490,7 +2730,9 @@
          "weight": "ноги в уголок",
          "rest": 90,
          "note": "после контроля",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Вис на грипсах-грушах",
@@ -2502,7 +2744,9 @@
          "reps": "удержание 30 с",
          "weight": "+5 кг",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         },
         {
          "name": "Голеностоп: выпад к стене с нажимом",
@@ -2514,6 +2758,8 @@
          "weight": "вес тела",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE",
          "perSide": true
         }
        ]
@@ -2600,7 +2846,9 @@
          "rest": 180,
          "note": "ступенчатая разминка 60 · 100 · 120 · 140 по 3–5 без лямок, выдох на подъёме; еда до сессии обязательна (§9.1) · мишень не пишется; подход прекращается на первом округлении",
          "control": true,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "lift",
+         "zone": "контроль · RPE ≤ 8,5"
         },
         {
          "name": "Присед на одной на возвышение",
@@ -2611,7 +2859,9 @@
          "reps": "5/ногу",
          "weight": "высота 30 см",
          "rest": 150,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "assist",
+         "zone": "RPE 8 · 2 в запасе"
         },
         {
          "name": "Присед на одной с пола — проба",
@@ -2624,7 +2874,9 @@
          "rest": 90,
          "note": "после третьего подхода на возвышение; не пробовал ни разу",
          "control": true,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "контроль · что выйдет"
         },
         {
          "name": "Казачий присед",
@@ -2637,6 +2889,8 @@
          "rest": 90,
          "note": "правое колено и голеностоп — место прошлой травмы (§9.5): дискомфорт — сигнал «колено» в чек-ине",
          "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE",
          "perSide": true
         },
         {
@@ -2650,7 +2904,9 @@
          "rest": 90,
          "note": "стоя, колени пола не касаются, полное разгибание и возврат; одна попытка",
          "control": true,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "контроль · что выйдет"
         },
         {
          "name": "Ролик — амплитуда и статика внизу",
@@ -2662,7 +2918,9 @@
          "weight": "колени на возвышении",
          "rest": 90,
          "note": "после контроля",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Боковая планка с подъёмом верхней ноги",
@@ -2673,7 +2931,9 @@
          "reps": "удержание 40 с/ст",
          "weight": "вес тела",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         },
         {
          "name": "Косые в висе — колени в сторону",
@@ -2684,7 +2944,9 @@
          "reps": "12/ст",
          "weight": "вес тела",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         },
         {
          "name": "Икры стоя — последний подход частичные внизу",
@@ -2697,6 +2959,8 @@
          "weight": "75 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "machine": "Hoist HD1610"
         },
         {
@@ -2711,7 +2975,9 @@
          "optional": true,
          "plus": "бонус 120 %",
          "note": "допуск: сон ≥ 7 ч и качество ≥ 3 · RPE в коридоре · сигналы по нулям · не два дня подряд",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         }
        ],
        "bonus": {
@@ -2782,7 +3048,9 @@
          "rpe": 8,
          "rest": 180,
          "note": "два сигнала усталости плеча → режется первой, до жима и махов (§9.4)",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "lift",
+         "zone": "RPE 7–8 · 2–3 в запасе"
         },
         {
          "name": "Жим гантелей наклон 30°",
@@ -2795,6 +3063,8 @@
          "rest": 150,
          "note": "первый подход разминочный на 16–18; глубина — локоть на уровне плеча, не ниже (§9.3)",
          "kind": "strength",
+         "zoneClass": "assist",
+         "zone": "RPE 8 · 2 в запасе",
          "perSide": true
         },
         {
@@ -2807,6 +3077,8 @@
          "weight": "15 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "perSide": true
         },
         {
@@ -2819,6 +3091,8 @@
          "weight": "14 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "perSide": true
         },
         {
@@ -2831,7 +3105,9 @@
          "weight": "24 кг, канат",
          "rest": 90,
          "note": "пятая нагрузка на локоть в неделю — лёгкий вес, последним из железа; при сигнале «локоть» снимается первым",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         },
         {
          "name": "Икры стоя — последний подход частичные внизу",
@@ -2843,6 +3119,8 @@
          "weight": "75 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "machine": "Hoist HD1610"
         }
        ],
@@ -2911,7 +3189,9 @@
          "rest": 180,
          "note": "сравним с Ц3 (+32×5 при RPE 10) напрямую; ожидание 6–7, мишень не пишется",
          "control": true,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "lift",
+         "zone": "контроль · что выйдет"
         },
         {
          "name": "Рычажная тяга с упором в грудь",
@@ -2923,6 +3203,8 @@
          "weight": "75 кг",
          "rest": 150,
          "kind": "strength",
+         "zoneClass": "assist",
+         "zone": "RPE 8 · 2 в запасе",
          "perSide": true
         },
         {
@@ -2934,7 +3216,9 @@
          "reps": "15",
          "weight": "24 кг",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа"
         },
         {
          "name": "Разворот гири на полу (ротация предплечья)",
@@ -2947,6 +3231,8 @@
          "weight": "12 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "perSide": true
         },
         {
@@ -2959,6 +3245,8 @@
          "weight": "16 кг",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "последний подход у отказа",
          "perSide": true
         },
         {
@@ -2972,7 +3260,9 @@
          "rest": 90,
          "note": "полный уголок с пола, ноги прямые; одна попытка",
          "control": true,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "контроль · что выйдет"
         },
         {
          "name": "Уголок — прогрессия",
@@ -2984,7 +3274,9 @@
          "weight": "паралеты",
          "rest": 90,
          "note": "после контроля",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         }
        ],
        "bonus": null
@@ -3057,7 +3349,9 @@
          "weight": "100 кг",
          "rest": 180,
          "rpe": 6,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "lift",
+         "zone": "RPE 6 · без отказов"
         },
         {
          "name": "Жим штанги стоя (OHP)",
@@ -3069,7 +3363,9 @@
          "weight": "40 кг",
          "rest": 180,
          "rpe": 6,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "lift",
+         "zone": "RPE 6 · без отказов"
         },
         {
          "name": "Подтягивания без веса",
@@ -3081,7 +3377,9 @@
          "weight": "вес тела",
          "rest": 180,
          "note": "единственный подход недели у отказа — точка по цели ×25–26 (решение атлета 20.09)",
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "max",
+         "zone": "один подход на максимум"
         }
        ]
       },
@@ -3145,7 +3443,9 @@
          "reps": "удержание 30 с",
          "weight": "вес тела",
          "rest": 30,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Выход силой",
@@ -3154,7 +3454,9 @@
          "reps": "2",
          "weight": "вес тела",
          "rest": 120,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Подъём коленей в висе — под носки",
@@ -3163,7 +3465,9 @@
          "reps": "8",
          "weight": "колени к локтям",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Компрессия сидя (pike compression lifts)",
@@ -3172,7 +3476,9 @@
          "reps": "8, пауза 2 с",
          "weight": "вес тела",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "RPE 6 · без отказов"
         },
         {
          "name": "Ролик — амплитуда и статика внизу",
@@ -3181,7 +3487,9 @@
          "reps": "8",
          "weight": "с колен",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Присед на одной на возвышение",
@@ -3190,7 +3498,9 @@
          "reps": "5/ногу",
          "weight": "высота 40 см",
          "rest": 150,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "assist",
+         "zone": "RPE 6 · без отказов"
         },
         {
          "name": "Казачий присед",
@@ -3200,6 +3510,8 @@
          "weight": "вес тела",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE",
          "perSide": true
         },
         {
@@ -3210,6 +3522,8 @@
          "weight": "вес тела",
          "rest": 90,
          "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE",
          "perSide": true
         }
        ]
@@ -3274,7 +3588,9 @@
          "reps": "макс",
          "weight": "вес тела",
          "rest": 180,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "max",
+         "zone": "один подход на максимум"
         },
         {
          "name": "Отжимания от пола",
@@ -3285,7 +3601,9 @@
          "reps": "15",
          "weight": "вес тела",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "RPE 6 · без отказов"
         },
         {
          "name": "Уголок — прогрессия",
@@ -3294,7 +3612,9 @@
          "reps": "удержание 15 с",
          "weight": "паралеты",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         },
         {
          "name": "Вис на грипсах-грушах",
@@ -3303,7 +3623,9 @@
          "reps": "удержание 30 с",
          "weight": "вес тела",
          "rest": 90,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "iso",
+         "zone": "RPE 6 · без отказов"
         },
         {
          "name": "Стойка лицом к стене — блок 5 мин",
@@ -3314,7 +3636,9 @@
          "reps": "удержание 30 с",
          "weight": "вес тела",
          "rest": 30,
-         "kind": "strength"
+         "kind": "strength",
+         "zoneClass": "skill",
+         "zone": "форма, без RPE"
         }
        ]
       },
