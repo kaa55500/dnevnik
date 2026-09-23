@@ -1,5 +1,5 @@
 // VERSION и ASSETS генерируются: node tools/build-sw.mjs. Руками не править.
-const VERSION = 'v58d5bbb6708c';
+const VERSION = 'vb1359b7e885f';
 const ASSETS = [
   '.',
   'analytics.js',
@@ -79,7 +79,8 @@ function withTimeout(promise, ms) {
 // затирала бы рабочий план, и офлайн отдавал бы её же.
 async function networkFirst(request) {
   try {
-    const res = await withTimeout(fetch(request), NETWORK_TIMEOUT);
+    // `no-cache`: HTTP-кэш браузера держал бы план до 10 минут после деплоя.
+    const res = await withTimeout(fetch(request, { cache: 'no-cache' }), NETWORK_TIMEOUT);
     if (!res.ok) throw new Error(`ответ ${res.status}`);
     const cache = await caches.open(VERSION);
     cache.put(request, res.clone());

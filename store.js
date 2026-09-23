@@ -202,7 +202,7 @@ export async function seedIfEmpty() {
 export async function syncExercises() {
   let fresh = null;
   try {
-    fresh = await fetch('data/exercises.json').then((r) => r.json());
+    fresh = await fetch('data/exercises.json', { cache: 'no-cache' }).then((r) => r.json());
   } catch {
     fresh = null;
   }
@@ -234,7 +234,7 @@ function rangesOverlap(a, b) {
 export async function syncPlan() {
   let fresh = null;
   try {
-    fresh = await fetch('data/plan-current.json').then((r) => r.json());
+    fresh = await fetch('data/plan-current.json', { cache: 'no-cache' }).then((r) => r.json());
   } catch {
     fresh = null;
   }
