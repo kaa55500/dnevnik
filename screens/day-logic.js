@@ -1,6 +1,5 @@
 import { fromISO, isoWeek } from '../lib/dates.js';
 
-const TUE = 2;
 const WED = 3;
 const SUN = 0;
 
@@ -10,17 +9,30 @@ const SUN = 0;
 // в программе, и строка была бы вечным долгом без дела. Цель остаётся слепой.
 const WEEK_REQUIRED = ['kcalAvg', 'proteinAvg', 'handstandSec'];
 
-/**
- * Обязательные строки утреннего чек-ина. Один список на экран дня и календарь:
- * календарь считал дыру только по весу и не знал про сон, хотя экран дня
- * требует обе цифры — день с весом без сна висел долгом и при этом не был
- * дырой на календаре. Следующая обязательная строка (давление ведётся руками
- * с 31.08) повторила бы расхождение.
- */
-export const DAY_REQUIRED = ['weight', 'sleepHours'];
+/** Цифры утреннего чек-ина. */
+const MORNING_FIELDS = ['weight', 'sleepHours', 'sleepQuality', 'restingHR', 'bpSys', 'bpDia'];
+/** Галочки утра: вакуум и все сигналы, какие бывают в планах. */
+const MORNING_MARKS = ['vacuum', 'headache', 'knee', 'chest', 'joints', 'elbowShoulder'];
 
-/** Строки утреннего чек-ина, любая из которых закрывает карточку дня. */
-const MORNING_FIELDS = ['weight', 'sleepHours', 'sleepQuality'];
+/**
+ * Утро закрыто, если в нём выбрано хоть что-то — цифра или поставленная
+ * галочка (решение атлета 26.09). Что не заполнено, то не заполнено:
+ * не взвесился — вес не придумать, и строка без веса долгом не висит.
+ * Сохранённые пустые галочки (`false`) выбором не считаются.
+ */
+export function morningClosed(d) {
+  if (!d) return false;
+  return MORNING_FIELDS.some((k) => !empty(d[k])) || MORNING_MARKS.some((k) => d[k] === true);
+}
+
+/**
+ * Утро перед записью. Ноль в весе — не цифра, а способ закрыть долг:
+ * 22.09 так и записалось «0 кг», и ноль уехал бы в средние недели.
+ */
+export function cleanMorning(d) {
+  if (d && d.weight === 0) d.weight = null;
+  return d;
+}
 
 /**
  * Подписи сигналов самочувствия. Один словарь на чек-ин и на журнал: копий
@@ -115,9 +127,21 @@ function allTasks(ctx) {
   // вес и сон не теряются: за прошедшие дни их по-прежнему ловит `debts`.
   tasks.push({
     key: 'morning', title: 'Утренний чек-ин', required: true,
-    done: MORNING_FIELDS.some((k) => !empty(d[k])) || isSkipped('morning'),
+    done: morningClosed(d) || isSkipped('morning'),
     skipped: isSkipped('morning'),
   });
+
+  // АД в день сигнала «голова» (CLAUDE.md). 25.09 галочка стояла, давления
+  // нет. Строка живёт только сегодня: вчерашнее давление уже не измерить,
+  // поэтому в долги она не уходит.
+  const isToday = !ctx.today || ctx.date >= ctx.today;
+  if (d.headache === true && isToday && (empty(d.bpSys) || empty(d.bpDia))) {
+    tasks.push({
+      key: 'bp', title: 'АД — сигнал «голова»', required: true,
+      done: isSkipped('bp'),
+      skipped: isSkipped('bp'),
+    });
+  }
 
   // Тренировка, перенесённая на другой день, в этот день долгом не висит:
   // она сделана, просто не здесь. Без этого плановая дата копила бы вечный
@@ -154,7 +178,9 @@ function allTasks(ctx) {
     });
   }
 
-  if (weekday(ctx.date) === TUE && mobility) {
+  // Просвет — в день замера, который называет план (26.09: навыковый день
+  // переехал на среду, и привязка ко вторнику ставила бы замер в силовой).
+  if (mobility && mobility.measureSplit) {
     tasks.push({
       key: 'splitGap', title: 'Просвет шпагата', required: true,
       done: !empty(w.splitGap) || isSkipped('splitGap'),
@@ -194,7 +220,7 @@ export function pendingTasks(ctx) {
 
 // Сессии открываются через карточку «Сделано», у остальных строк формы больше нет:
 // без этого списка первая же записанная цифра прятала форму навсегда.
-const EDITABLE = new Set(['morning', 'mobility', 'splitGap', 'waist', 'evening', 'week']);
+const EDITABLE = new Set(['morning', 'bp', 'mobility', 'splitGap', 'waist', 'evening', 'week']);
 
 /** Закрытые строки, которые ещё можно открыть и поправить. */
 export function closedTasks(ctx) {
@@ -219,6 +245,7 @@ export function stretchDone(day, session) {
 export function debts(ctx) {
   const days = new Map((ctx.days || []).map((d) => [d.date, d]));
   const weeks = new Map((ctx.weeks || []).map((w) => [w.id, w]));
+  const splitDates = new Set(ctx.splitDates || []);
   const out = [];
 
   for (const date of ctx.dates || []) {
@@ -232,11 +259,10 @@ export function debts(ctx) {
 
     const ds = d.skipped || {};
     const ws = w.skipped || {};
-    if (!ds.morning) {
-      if (empty(d.weight)) out.push({ date, key: 'morning', title: 'вес' });
-      if (empty(d.sleepHours)) out.push({ date, key: 'morning', title: 'сон' });
-    }
-    if (weekday(date) === TUE && empty(w.splitGap) && !ws.splitGap) {
+    // Долг — только пустое утро целиком (26.09): закрытое утро без веса
+    // или сна — не долг, а «не заполнено».
+    if (!ds.morning && !morningClosed(d)) out.push({ date, key: 'morning', title: 'утро' });
+    if (splitDates.has(date) && empty(w.splitGap) && !ws.splitGap) {
       out.push({ date, key: 'splitGap', title: 'просвет шпагата' });
     }
     if (weekday(date) === WED && empty(w.waist) && !ws.waist) {

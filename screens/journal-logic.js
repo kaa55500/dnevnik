@@ -41,8 +41,11 @@ export function foldSets(sets) {
 
     // Удержание живёт своим полем: подход «15 с» и подход «15 повторов»
     // в одном столбце неразличимы, а это разные упражнения по смыслу.
+    // Подход с удержанием (ролик Ц4) несёт обе цифры: «6 + 15 с».
     const hold = has(s.sec);
-    const reps = items.map((x) => (hold ? x.sec : x.reps));
+    const reps = items.map((x) => (hold
+      ? (has(x.reps) ? `${x.reps} + ${x.sec}` : x.sec)
+      : x.reps));
     const unit = hold ? ' с' : '';
     const repText = (same(reps)
       ? (items.length > 1 ? `${items.length}×${reps[0]}` : String(reps[0] ?? '—'))
@@ -127,10 +130,11 @@ function eveningRows(day) {
 
 /**
  * Недельные замеры показываются в тот день, когда их снимают: талия в среду,
- * просвет шпагата во вторник. Иначе цифра либо теряется, либо дублируется
- * все семь дней подряд.
+ * просвет шпагата — в день замера по плану (`measureSplit`; в Ц3 вторник,
+ * в Ц4 с 26.09 — навыковая среда). Иначе цифра либо теряется, либо
+ * дублируется все семь дней подряд.
  */
-function weekRows(iso, week) {
+function weekRows(iso, week, splitDay) {
   if (!week) return [];
   const dow = fromISO(iso).getDay();
   const out = [];
@@ -139,7 +143,7 @@ function weekRows(iso, week) {
     if (has(v)) out.push({ label, value: `${fmtWeight(v)} ${unit}`, edit });
   };
   if (dow === 3) push('талия', week.waist, 'см', 'waist');
-  if (dow === 2 && has(week.splitGap)) {
+  if (splitDay && has(week.splitGap)) {
     // Протокол замера идёт вместе с цифрой: с 31.08 просвет снимается после
     // тренировки, и с цифрами до этой даты в один ряд он не встаёт.
     const mark = week.splitProtocol === 'post' ? ' · после тренировки'
@@ -247,7 +251,9 @@ export function dayRecord(iso, ctx) {
 
   const morning = morningRows(day);
   const evening = eveningRows(day);
-  const weekly = weekRows(iso, week);
+  const splitDay = sessionsFor(pickPlan(ctx.plans || [], iso), iso)
+    .some((x) => x.session.kind === 'mobility' && x.session.measureSplit);
+  const weekly = weekRows(iso, week, splitDay);
 
   return {
     date: iso,

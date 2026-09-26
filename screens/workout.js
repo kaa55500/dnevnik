@@ -12,6 +12,7 @@ import {
   nextSetDefaults, planReps, averageRPE, isControlSet, asksChestSignal,
   fillModeOf, restForSet, insertExercise, requiredPairs, workoutElapsed, cardioType,
   prescriptionFor, exerciseClosed, orderedSets, setProgress,
+  bodyweightForm, restKind, setMeasure, markControl,
   firstOpen, debtNames,
 } from './workout-logic.js';
 import { cellHint } from '../lib/machines.js';
@@ -767,6 +768,7 @@ function goTo(box, index) {
   state.index = index;
   state.editSet = null;
   state.warmup = false;
+  state.control = null;
   state.insertAt = null;
   state.textEdit = null;
   // Метка начала подхода принадлежит упражнению, с которого уходишь: иначе
@@ -1104,6 +1106,7 @@ async function draw(box) {
       const text = line || `${wText}${cellMark ? ` ${cellMark}` : ''} × ${setAmount(s)}`
         + (s.rpe != null ? `   RPE ${fmtNum(s.rpe, 1)}` : '')
         + (s.rest != null ? `   отдых ${s.restManual ? '~' : ''}${fmtDuration(s.rest)}` : '')
+        + (s.transition != null ? `   переход ${s.transitionManual ? '~' : ''}${fmtDuration(s.transition)}` : '')
         + (marks ? `   ${marks}` : '');
       const li = el('li', {
         className: (s.warmup ? 'warm' : '') + (state.editSet === i ? ' editing' : ''),
@@ -1115,6 +1118,7 @@ async function draw(box) {
         className: 'set-body', textContent: text,
         onclick: () => {
           state.editSet = state.editSet === i ? null : i;
+          state.control = null;
           if (state.editSet == null) state.warmup = false;
           return draw(box);
         },
@@ -1160,13 +1164,17 @@ async function draw(box) {
       : -1;
     // Удержание живёт своим полем, а не повторами: у Ролика в одном упражнении
     // и то, и другое («3×8 + 2×15 с»), и признак стоит у подхода, не у плана.
-    const holds = workout.kind !== 'cardio' && Boolean(guide && guide.sec);
+    // Подход с удержанием (`holdSec` в плане, ролик Ц4) — обе цифры сразу.
+    const combined = presc.holdSec != null;
+    const holds = workout.kind !== 'cardio' && (Boolean(guide && guide.sec) || combined);
     const d = editing || nextSetDefaults(presc, ex.sets, history, { hold: holds });
     const weightLabel = cardio ? 'минуты' : (presc.perSide ? 'вес на сторону' : 'вес');
     const repsLabel = cardio ? 'км' : 'повт';
     // У упражнений с весом тела поле веса пустует и мешает: шаг ±1,25 к нему
     // не относится. Показываем по требованию — жилет и пояс никуда не делись.
-    const bodyweight = !cardio && d.weight == null && !presc.perSide;
+    // Число в плане держит поле всегда: 24.09 становую пришлось вносить через
+    // жилет, потому что в истории лежала гиперэкстензия без веса.
+    const bodyweight = bodyweightForm(presc, d, cardio);
     // У кардио время и дистанция лежат в minutes/km, а не в weight/reps.
     // Правка забега открывалась с пустыми полями и сохраняла в них null —
     // время и километры стирались, а logCardioFromWorkout разносил нули в день.
@@ -1195,14 +1203,16 @@ async function draw(box) {
       type: 'number', step: cardio ? '1' : '0.5', inputMode: 'decimal',
       value: cardio ? (d.hr ?? '') : (d.rpe ?? ''), className: 'wk-rpe',
     }) : null;
+    // Пауза подхода: первый подход упражнения несёт переход от прошлого
+    // упражнения, остальные — отдых (решение атлета 26.09). Поле у всех, кроме
+    // кардио: 23.09 его сняли у навыков, но в режиме «сейчас» замер писался всё
+    // равно — и 1–2 секунды отдыха на ролике поправить было нечем.
+    const pause = cardio ? null : restKind(index, editing ? state.editSet : ex.sets.length);
+    const pauseKey = pause === 'transition' ? 'transition' : 'rest';
     // Отдых руками: в режиме «потом» он единственный источник цифры,
     // в режиме «сейчас» — способ поправить измеренное.
-    const restWas = editing && editing.rest != null ? String(editing.rest) : '';
-    // Отдых — у всех силовых, кроме навыков (решение 23.09): там критерий —
-    // форма, а не восстановление. На пяти лифтах с RPE цифра читается
-    // правилами, на остальных она справочная. План Ц3 классов не знает —
-    // там поле стоит у всего силового.
-    const restInput = cardio || presc.zoneClass === 'skill' ? null : el('input', {
+    const restWas = editing && editing[pauseKey] != null ? String(editing[pauseKey]) : '';
+    const restInput = !pause ? null : el('input', {
       type: 'number', step: '5', inputMode: 'numeric', className: 'wk-restin',
       value: restWas,
       // Плейсхолдер живёт в поле с кеглем 34 px: «по секундомеру» не влезало
@@ -1221,14 +1231,15 @@ async function draw(box) {
         stepper(sInput, -5), sInput, stepper(sInput, 5)) : null,
       asksRPE ? el('label', {}, cardio ? 'пульс' : 'RPE',
         stepper(rpeInput, cardio ? -1 : -0.5), rpeInput, stepper(rpeInput, cardio ? 1 : 0.5)) : null,
-      restInput ? el('label', { className: 'rest-row' }, 'отдых, с', restInput) : null,
+      restInput ? el('label', { className: 'rest-row' },
+        pause === 'transition' ? 'переход, с' : 'отдых, с', restInput) : null,
     );
     // Меры взаимно исключают друг друга, и видно это должно быть в форме,
     // а не при записи. Секунды переносятся с прошлого подхода, как вес
     // и повторы; у Ролика следом идут подходы в повторах — набранные поверх
     // непустого удержания они молча пропадали бы, потому что удержание
     // побеждает. Теперь одно поле гасит другое на глазах.
-    if (sInput) {
+    if (sInput && !combined) {
       rInput.addEventListener('input', () => { if (rInput.value !== '') sInput.value = ''; });
       sInput.addEventListener('input', () => { if (sInput.value !== '') rInput.value = ''; });
     }
@@ -1286,7 +1297,23 @@ async function draw(box) {
       warmToggle.classList.toggle('on', state.warmup);
     }
 
-    box.append(el('div', { className: 'wk-actions' }, warmToggle, el('button', {
+    // Метка контроля — переключателем (решение атлета 26.09). Сама она встаёт
+    // на первый рабочий подход, но 26.09 первый подход подтягиваний облегчён
+    // до 24 кг, и тестом Н4 стал бы он, а не подход с +32. Выключил — метка
+    // ждёт подхода, на котором её включат; в упражнении она одна.
+    if (state.control == null) {
+      state.control = editing ? Boolean(editing.control) : isControlSet(presc, ex.sets, state.warmup);
+    }
+    const ctlToggle = presc.control ? el('button', {
+      className: 'ctl-toggle' + (state.control ? ' on' : ''),
+      textContent: 'контрольный',
+      onclick: () => {
+        state.control = !state.control;
+        ctlToggle.classList.toggle('on', state.control);
+      },
+    }) : null;
+
+    box.append(el('div', { className: 'wk-actions' }, warmToggle, ctlToggle, el('button', {
       className: 'wk-add' + (editing ? ' editing' : ''),
       textContent: editing
         ? `СОХРАНИТЬ ПОДХОД ${editingPos + 1}`
@@ -1309,10 +1336,21 @@ async function draw(box) {
         const restNow = restInput ? String(restInput.value ?? '') : '';
         const restTouched = Boolean(restInput) && restNow !== restWas;
         const manual = restTouched ? parseNum(restNow) : null;
-        const { rest, restManual, restToStart } = restForSet({
+        const measured = restForSet({
           mode, lastSetAt: state.lastSetAt, now: Date.now(), manual,
           startedAt: state.setStartedAt,
         });
+        // У первого упражнения сессии паузы нет вовсе; у первого подхода
+        // остальных цифра уходит в переход, а не в отдых.
+        const none = { rest: null, restManual: false, restToStart: false };
+        const { rest, restManual, restToStart } = pause === 'rest' ? measured : none;
+        const trans = pause === 'transition' ? measured : none;
+        const measure = setMeasure({
+          reps: parseNum(rInput.value),
+          sec: sInput ? parseNum(sInput.value) : null,
+          combined,
+        });
+        const control = Boolean(presc.control) && !warmup && Boolean(state.control);
         const set = cardio ? {
           minutes: parseNum(wInput.value),
           km: parseNum(rInput.value),
@@ -1328,8 +1366,9 @@ async function draw(box) {
           // Мера у подхода одна: заполненное удержание отменяет повторы.
           // Иначе стойка на 30 секунд уехала бы в базу ещё и «25 повторами»,
           // подставленными из плановой строки «удержание 25–35 с».
-          reps: (sInput && parseNum(sInput.value) != null) ? null : parseNum(rInput.value),
-          sec: sInput ? parseNum(sInput.value) : null,
+          // Подход с удержанием хранит обе цифры (`setMeasure`).
+          reps: measure.reps,
+          sec: measure.sec,
           rpe: asksRPE ? parseNum(rpeInput.value) : null,
           rest,
           restManual: restManual || undefined,
@@ -1337,8 +1376,10 @@ async function draw(box) {
           // отсутствует — прежний интервал между записями. Ряды Н1–Н3
           // и последующих недель по нему и различаются.
           restToStart: restToStart || undefined,
+          transition: trans.rest ?? undefined,
+          transitionManual: trans.restManual || undefined,
           warmup,
-          control: isControlSet(presc, ex.sets, warmup),
+          control,
         };
 
         if (editing) {
@@ -1348,10 +1389,11 @@ async function draw(box) {
           // подхода: они относятся к моменту записи, а не к введённым цифрам.
           // Тронутое поле отдыха при этом слушается в обе стороны — очищенное
           // стирает цифру, иначе ошибочные 900 секунд было не убрать.
-          const restPatch = !restTouched ? {}
+          const manualKey = pauseKey === 'transition' ? 'transitionManual' : 'restManual';
+          const restPatch = !restTouched || !pause ? {}
             : (manual == null
-              ? { rest: null, restManual: undefined }
-              : { rest: set.rest, restManual: true });
+              ? { [pauseKey]: null, [manualKey]: undefined }
+              : { [pauseKey]: Math.round(manual), [manualKey]: true });
           ex.sets[i] = {
             ...before,
             weight: set.weight, reps: set.reps, sec: set.sec, rpe: set.rpe,
@@ -1359,6 +1401,7 @@ async function draw(box) {
             warmup: set.warmup,
             ...restPatch,
           };
+          if (presc.control) markControl(ex.sets, i, set.control);
           if (!(await save(box))) {
             ex.sets[i] = before;
             // Без перерисовки кнопка осталась бы заблокированной навсегда,
@@ -1368,11 +1411,13 @@ async function draw(box) {
           }
           state.editSet = null;
           state.warmup = false;
+          state.control = null;
           await draw(box);
           return;
         }
 
         ex.sets.push(set);
+        if (set.control) markControl(ex.sets, ex.sets.length - 1, true);
         // Метка первого подхода — единственная точка отсчёта тренировки,
         // которая переживает закрытие приложения.
         const hadFirst = Boolean(workout.firstSetAt);
@@ -1395,6 +1440,7 @@ async function draw(box) {
         // Тумблер залипал: включённый однажды, он метил разминочными все
         // следующие подходы, пока это не замечали глазами.
         state.warmup = false;
+        state.control = null;
         state.lastSetAt = workout.lastSetAt;
         // Отдых закрыт — следующая метка начала подхода ставится заново.
         state.setStartedAt = null;
@@ -1417,7 +1463,7 @@ async function draw(box) {
     if (editing) {
       box.append(el('button', {
         className: 'back', textContent: 'отменить правку',
-        onclick: () => { state.editSet = null; state.warmup = false; return draw(box); },
+        onclick: () => { state.editSet = null; state.warmup = false; state.control = null; return draw(box); },
       }));
     }
   }
@@ -1632,7 +1678,9 @@ async function draw(box) {
 
 // Условия добора печатаются памяткой. Проверяет их атлет, а не приложение:
 // вычислять «можно ли» значило бы запрещать, а решение остаётся за ним.
-const PLUS_GATE = 'сон ≥ 7 ч · RPE в коридоре · сигналы по нулям · не два дня подряд';
+// Условий допуска у бонуса нет (решение атлета 26.09): делается по времени
+// и самочувствию в моменте.
+const PLUS_GATE = 'по времени и самочувствию';
 
 
 export async function render(box, params = {}) {
@@ -1755,7 +1803,7 @@ export async function render(box, params = {}) {
       workout, index: firstOpen(workout), timer: null, clock: null, restLeft: null,
       paramDate: date, showOverview: false,
       warmup: false, lastSetAt: workout.lastSetAt || null, guide, showPlan: false,
-      editSet: null, insertAt: null, textEdit: null, setStartedAt: null,
+      editSet: null, insertAt: null, textEdit: null, setStartedAt: null, control: null,
       debts: debtNames(allWorkouts, date),
       stretch, bonus, day, week,
       marks: { ...(day.stretch || {}) }, secs: { ...(day.stretchSec || {}) },

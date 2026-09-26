@@ -513,6 +513,27 @@ ol.wk-sets li.warm { opacity: 0.5; }
 
 .warm-toggle.on { background: var(--warn-soft); color: var(--warn); }
 
+/* Метка контроля (26.09) — такой же тумблер; включённая красится как значок
+   «контрольный подход» над формой. С ней кнопок три, и на 400 px запись
+   упиралась в край: тумблеры идут первой строкой, запись — во всю ширину. */
+.ctl-toggle {
+  flex: 0 0 auto;
+  padding: 0 16px;
+  min-height: 56px;
+  background: var(--card-2);
+  border: 0;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+
+.ctl-toggle.on { background: var(--warn-soft); color: var(--warn); font-weight: 600; }
+
+.wk-actions:has(.ctl-toggle) { flex-wrap: wrap; }
+.wk-actions:has(.ctl-toggle) .warm-toggle,
+.wk-actions:has(.ctl-toggle) .ctl-toggle { flex: 1 1 0; }
+.wk-actions:has(.ctl-toggle) .wk-add { flex: 1 1 100%; }
+
 .wk-add {
   flex: 1;
   min-height: 56px;

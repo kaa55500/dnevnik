@@ -6,6 +6,19 @@ export function firstNumber(s) {
   return m ? parseNum(m[0]) : null;
 }
 
+/**
+ * Вес из строки плана — только килограммы или гиря. Первое число строки
+ * врало: «стопка ~15 см» уезжала в базу пятнадцатью килограммами (23.09),
+ * «подбор по RPE 8–9» подставлял восьмёрку, «5ПМ … далее 100 кг» — пятёрку.
+ */
+export function planWeight(s) {
+  const t = String(s ?? '');
+  const kg = t.match(/(\d+(?:[.,]\d+)?)\s*кг/);
+  if (kg) return parseNum(kg[1]);
+  const bell = t.match(/гир[яиею]\s+(\d+(?:[.,]\d+)?)/);
+  return bell ? parseNum(bell[1]) : null;
+}
+
 /** «3×8» в плановой строке: подходы и повторы явной парой. */
 const EXPLICIT_REPS = /(\d+)\s*[×x]\s*(\d+)/;
 
@@ -36,20 +49,70 @@ export function nextSetDefaults(presc, doneSets, history, opts = {}) {
     };
   }
   const fromHistory = history && history.length ? history[history.length - 1] : null;
+  // Пустой вес в истории плановый не отменяет: 17.09 под именем становой
+  // записали гиперэкстензию без веса, и 24.09 форма спрятала поле веса.
+  const histWeight = fromHistory ? fromHistory.weight : null;
   return {
-    weight: fromHistory ? fromHistory.weight : firstNumber(presc.weight),
+    weight: histWeight != null ? histWeight : planWeight(presc.weight),
     // У чистого удержания повторов в плане нет: «удержание 25–35 с» даёт
     // первое число, и форма звала записать 25 повторов стойки. Подставляем
     // только явное «N×M» — у Ролика («3×6 + 2×15 с») повторы настоящие.
     reps: fromHistory ? fromHistory.reps
-      : ((opts.hold && !EXPLICIT_REPS.test(String(presc.reps ?? '')))
+      : ((opts.hold && presc.holdSec == null && !EXPLICIT_REPS.test(String(presc.reps ?? '')))
         ? null : planReps(presc.reps)),
     // Секунды из плана не подставляются: «3×8 + 2×15 с» у Ролика значит,
     // что первые подходы идут в повторах, и предзаполненное поле удержания
     // звало бы записать не то, что делаешь.
-    sec: fromHistory ? (fromHistory.sec ?? null) : null,
+    // Исключение — подход с удержанием (`holdSec` в плане): там секунды
+    // часть каждого подхода, и план их задаёт числом.
+    sec: fromHistory && fromHistory.sec != null ? fromHistory.sec : (presc.holdSec ?? null),
     rpe: (fromHistory && fromHistory.rpe != null) ? fromHistory.rpe : (presc.rpe ?? null),
   };
+}
+
+/**
+ * Форма веса тела: поле веса прячется за кнопку «+ вес (жилет, пояс)».
+ * Только когда веса нет ни в подстановке, ни в плане: число в плане держит
+ * поле всегда, как бы ни выглядела история. Число здесь — любое: у «5ПМ»
+ * килограммов в строке нет, а штанга есть; подставляется при этом только
+ * вес в килограммах (`planWeight`).
+ */
+export function bodyweightForm(presc, defaults, cardio) {
+  if (cardio || presc.perSide) return false;
+  return defaults.weight == null && firstNumber(presc.weight) == null;
+}
+
+/**
+ * Какую паузу пишет подход (решение атлета 26.09). Первый подход упражнения
+ * несёт переход — время от последнего подхода прошлого упражнения; остальные —
+ * отдых между подходами. Две меры в одном поле не смешиваются: правила
+ * читают отдых, переход — длину сессии. У первого упражнения перехода нет.
+ */
+export function restKind(exIndex, setIndex) {
+  if (setIndex > 0) return 'rest';
+  return exIndex > 0 ? 'transition' : null;
+}
+
+/**
+ * Мера подхода. Обычно она одна: удержание гасит повторы, иначе стойка
+ * уехала бы в базу ещё и повторами из плановой строки. Подход с удержанием
+ * (ролик Ц4: 6 повторов и 15 с внизу) хранит обе цифры.
+ */
+export function setMeasure({ reps, sec, combined }) {
+  if (combined) return { reps: reps ?? null, sec: sec ?? null };
+  return sec != null ? { reps: null, sec } : { reps: reps ?? null, sec: null };
+}
+
+/**
+ * Метка контроля в упражнении одна. Поставленная на подход, она снимается
+ * с остальных; снятая — снимается только со своего.
+ */
+export function markControl(sets, index, on) {
+  sets.forEach((s, i) => {
+    if (i === index) s.control = Boolean(on);
+    else if (on && s.control) s.control = false;
+  });
+  return sets;
 }
 
 /**

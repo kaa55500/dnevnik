@@ -7,7 +7,9 @@ import { plannedSeconds, applySplit } from './stretch-block.js';
 import { CARDIO_TYPES } from './workout-logic.js';
 import { todayISO, weekdayShort, isoWeek, addDays, dm, fromISO } from '../lib/dates.js';
 import { parseNum } from '../lib/format.js';
-import { pendingTasks, closedTasks, debts, skipKeyOf, skipScopeOf, SIGNALS, signalsFor } from './day-logic.js';
+import {
+  pendingTasks, closedTasks, debts, skipKeyOf, skipScopeOf, SIGNALS, signalsFor, cleanMorning,
+} from './day-logic.js';
 import { makeUnplannedWorkout, KIND_TITLE } from './workout-logic.js';
 import { dayRecord } from './journal-logic.js';
 import { renderRecord } from './record-view.js';
@@ -236,7 +238,14 @@ export async function render(box, params = {}) {
     const allDates = plans.flatMap((p) => sessionDates(p));
     const current = plans.find((p) => { const r = planRange(p); return r && today >= r.from && today <= r.to; });
     const range = current ? planRange(current) : {};
-    const owed = debts({ today, dates: [...new Set(allDates)].sort(), days, weeks, from: range.from, to: range.to });
+    // День замера шпагата называет план (`measureSplit`), а не календарь:
+    // 26.09 навыковый день переехал со вторника на среду.
+    const splitDates = plans.flatMap((p) => p.weeks.flatMap((w) => w.days
+      .filter((d) => d.sessions.some((s) => s.kind === 'mobility' && s.measureSplit))
+      .map((d) => d.date)));
+    const owed = debts({
+      today, dates: [...new Set(allDates)].sort(), splitDates, days, weeks, from: range.from, to: range.to,
+    });
     if (owed.length) {
       const card = el('section', { className: 'card debts' },
         el('h2', { textContent: `Не закрыто: ${owed.length}` }));
@@ -283,7 +292,7 @@ export async function render(box, params = {}) {
     box.append(card);
   }
 
-  const tasks = pendingTasks({ date, day, week, sessions, doneKinds, movedAway, settings });
+  const tasks = pendingTasks({ date, today, day, week, sessions, doneKinds, movedAway, settings });
   if (!tasks.length) {
     box.append(el('p', { className: 'done-all', textContent: 'Всё закрыто.' }));
   }
@@ -357,6 +366,23 @@ export async function render(box, params = {}) {
         form.append(box_);
       }
       form.append(bpSlot);
+      card.append(form, el('button', {
+        className: 'save', textContent: 'Сохранить',
+        onclick: async () => {
+          cleanMorning(collect(form, day));
+          try {
+            await save(day, putDay);
+          } catch (err) { errorLine(box, err); }
+        },
+      }));
+    }
+
+    // Давление в день сигнала «голова» — своей строкой на сегодня (26.09):
+    // поля внутри утра 25.09 остались пустыми, и правило молча не сработало.
+    if (t.key === 'bp') {
+      const form = el('div', { className: 'grid bp' },
+        field('давление верх', 'bpSys', day, '1'),
+        field('давление низ', 'bpDia', day, '1'));
       card.append(form, el('button', {
         className: 'save', textContent: 'Сохранить',
         onclick: async () => {
@@ -543,7 +569,7 @@ export async function render(box, params = {}) {
 
   // Закрытая строка не исчезает насовсем: форма складывается сюда, иначе
   // ошибку в утреннем весе уже никак не поправить (находка #4).
-  const closed = closedTasks({ date, day, week, sessions, doneKinds, movedAway, settings });
+  const closed = closedTasks({ date, today, day, week, sessions, doneKinds, movedAway, settings });
 
   // Строка, по которой тапнули в «Сделано», открывается формой сразу,
   // а не прячется внутри свёрнутого блока.

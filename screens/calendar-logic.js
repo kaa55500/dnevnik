@@ -1,5 +1,5 @@
 import { toISO, fromISO, isoWeek } from '../lib/dates.js';
-import { DAY_REQUIRED } from './day-logic.js';
+import { morningClosed } from './day-logic.js';
 
 /**
  * Сетка месяца с состоянием каждого дня. Неделя начинается с понедельника,
@@ -36,9 +36,10 @@ export function dayState(iso, ctx) {
     future: iso > ctx.today,
     workout: done.length > 0,
     draft: draft && done.length === 0,
-    // Каждая обязательная строка чек-ина — своим полем: `isHole` проверяет
-    // их списком, и новая строка попадает в календарь без правки здесь.
-    ...Object.fromEntries(DAY_REQUIRED.map((k) => [k, day != null && day[k] != null])),
+    // Утро — по тому же правилу, что долги (`morningClosed`, 26.09): закрыто,
+    // если в нём выбрано хоть что-то. Одно правило на два экрана.
+    morning: morningClosed(day),
+    weight: day != null && day.weight != null,
     evening: day != null && (day.walkKm != null || (day.cardio || []).length > 0),
     stretch: day != null && Object.values(day.stretch || {}).some(Boolean),
     waist: week != null && week.waist != null,
@@ -48,14 +49,13 @@ export function dayState(iso, ctx) {
 /**
  * Пустой день внутри цикла, который уже прошёл, — это дыра, а не выходной.
  *
- * Обязательные строки берутся из `day-logic`, а не перечисляются здесь заново:
- * календарь знал только про вес и не знал про сон, хотя экран дня требует обе
- * цифры. День с весом без сна висел долгом и при этом не был дырой — «красным
- * незакрытый день» и «не закрыто» переставали быть одним понятием.
+ * Правило утра берётся из `day-logic`, а не пишется здесь заново: календарь
+ * однажды уже разошёлся с экраном дня, и «красным незакрытый день»
+ * и «не закрыто» переставали быть одним понятием.
  */
 export function isHole(state) {
   if (state.future) return false;
   if (!state.planned) return false;
-  if (!DAY_REQUIRED.every((k) => state[k])) return true;
+  if (!state.morning) return true;
   return !state.workout && !state.evening;
 }

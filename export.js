@@ -163,10 +163,15 @@ export function sessionSummary(workout) {
       }
       const w = s.weight == null ? 'в/т' : fmtWeight(s.weight);
       const rest = s.rest != null ? ` /${Math.round(s.rest)}с` : '';
+      // Переход — пауза перед первым подходом упражнения (26.09), не отдых.
+      const trans = s.transition != null ? ` переход ${Math.round(s.transition)}с` : '';
       // Удержание пишется своей мерой: «в/т×null» было ровно тем, чем
-      // выглядело — подходом, который в своде не читается.
-      const amount = s.sec != null ? `${fmtWeight(s.sec)}с` : String(s.reps);
-      return `${w}×${amount}${rpe}${rest}${mark}`;
+      // выглядело — подходом, который в своде не читается. Подход
+      // с удержанием несёт обе цифры.
+      const amount = s.sec != null
+        ? (s.reps != null ? `${s.reps}+${fmtWeight(s.sec)}с` : `${fmtWeight(s.sec)}с`)
+        : String(s.reps);
+      return `${w}×${amount}${rpe}${trans}${rest}${mark}`;
     }).join(' · ');
     const tail = ex.skipped ? ` · пропуск — ${ex.skipReason || 'без причины'}` : '';
     lines.push(`${name}: ${body}${tail}`);
