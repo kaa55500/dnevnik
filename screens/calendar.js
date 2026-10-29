@@ -65,6 +65,8 @@ export async function render(box, params = {}) {
 
   box.append(el('div', { className: 'cal-legend' },
     el('span', {}, el('i', { className: 'dot w' }), ' тренировка'),
+    // Точка черновика рисовалась, а в легенде её не было — читалась как шум.
+    el('span', {}, el('i', { className: 'dot d' }), ' не закрыта'),
     el('span', {}, el('i', { className: 'dot b' }), ' вес'),
     el('span', {}, el('i', { className: 'dot e' }), ' вечер'),
     el('span', { className: 'hole-key' }, 'красным — незакрытый день цикла')));

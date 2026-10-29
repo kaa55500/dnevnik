@@ -1,14 +1,44 @@
 import { addDays, daysBetween, isoWeek, todayISO } from './lib/dates.js';
 
+/**
+ * Скользящее среднее по календарному окну: в точку идут записи за `window`
+ * дней, заканчивая её датой. Окно в записях растягивалось на две-три недели:
+ * вес вносится примерно в трети дней, и «среднее за 7 дней» на деле сводило
+ * семь взвешиваний за восемнадцать дней. Первая точка — там, где ряд уже
+ * накрывает окно целиком; на ежедневном ряду счёт прежний.
+ */
 export function movingAverage(series, window = 7) {
   const sorted = [...series].sort((a, b) => a.date.localeCompare(b.date));
+  if (!sorted.length) return [];
+  const first = sorted[0].date;
   const out = [];
-  for (let i = window - 1; i < sorted.length; i++) {
+  for (let i = 0; i < sorted.length; i++) {
+    const from = addDays(sorted[i].date, -(window - 1));
+    if (from < first) continue;
     let sum = 0;
-    for (let j = i - window + 1; j <= i; j++) sum += sorted[j].value;
-    out.push({ date: sorted[i].date, value: sum / window });
+    let n = 0;
+    for (let j = i; j >= 0 && sorted[j].date >= from; j--) {
+      sum += sorted[j].value;
+      n += 1;
+    }
+    out.push({ date: sorted[i].date, value: sum / n });
   }
   return out;
+}
+
+/**
+ * Вес ниже порога — не взвешивание, а пустое поле, сохранённое нулём (22.09),
+ * или опечатка. Новые нули гасит чек-ин (`cleanMorning`), старые лежат в базе
+ * и прижимали шкалу спарклайна к нулю, поэтому отсекаются на чтении.
+ */
+export const MIN_BODY_WEIGHT = 30;
+
+/** Ряд веса тела по дням, по возрастанию даты, без нулей и опечаток. */
+export function weightSeries(days) {
+  return (days || [])
+    .filter((d) => d.weight != null && d.weight >= MIN_BODY_WEIGHT)
+    .map((d) => ({ date: d.date, value: d.weight }))
+    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 export function trendPerWeek(series, days = 21) {
@@ -48,8 +78,18 @@ export function forecastDate(lastAvg, goal, perWeek, fromISO) {
   return addDays(fromISO, Math.round(weeks * 7));
 }
 
-export function e1rm(weight, reps) {
-  return weight * (1 + reps / 30);
+/**
+ * Расчётный максимум по Бжицки — той же формулой читается цель «жим 140»
+ * (124,5×5, `ЗАМЕРЫ.md`). При RPE ≥ 8 к повторам прибавляется запас
+ * (10 − RPE): тройка 110×3 @8 стоит 123,8, а Эпли без RPE давал 121,
+ * и ряд силы «падал» на каждой неделе троек. Ниже восьми запас оценивается
+ * плохо (Refalo 2024), и подход считается как доведённый до отказа —
+ * оценка снизу, а не догадка сверху.
+ */
+export function e1rm(weight, reps, rpe = null) {
+  const rir = rpe != null && rpe >= 8 ? 10 - rpe : 0;
+  const d = 37 - reps - rir;
+  return d > 0 ? (weight * 36) / d : null;
 }
 
 /**
@@ -61,10 +101,12 @@ export function e1rm(weight, reps) {
  */
 export const E1RM_MAX_REPS = 12;
 
-function workingSets(workout, name) {
+function workingSets(workout, name, variant = null) {
   // Замена ищется по фактическому имени: `ex.name` при замене не меняется,
   // и «жим в раме», сделанный вместо жима лёжа, ложился в максимум жима лёжа.
-  const ex = (workout.exercises || []).find((e) => (e.replacedWith || e.name) === name);
+  // Вариант снаряда (с 29.10) — свой ряд: штанга и рама в один максимум не идут.
+  const ex = (workout.exercises || []).find((e) => (e.replacedWith || e.name) === name
+    && (e.variant || null) === (variant || null));
   // Пропуск больше не съедает записанные подходы: сделанное сделано, а метка
   // говорит лишь о том, что упражнение не доведено до планового числа.
   if (!ex) return [];
@@ -72,12 +114,12 @@ function workingSets(workout, name) {
     && s.reps > 0 && s.reps <= E1RM_MAX_REPS);
 }
 
-export function weeklyBest(workouts, name) {
+export function weeklyBest(workouts, name, variant = null) {
   const byWeek = new Map();
   for (const w of workouts) {
-    for (const s of workingSets(w, name)) {
+    for (const s of workingSets(w, name, variant)) {
       const week = isoWeek(w.date);
-      const value = e1rm(s.weight, s.reps);
+      const value = e1rm(s.weight, s.reps, s.rpe);
       const cur = byWeek.get(week);
       if (!cur || value > cur.e1rm) {
         byWeek.set(week, { week, e1rm: value, weight: s.weight, reps: s.reps });
@@ -95,10 +137,25 @@ export function detectPlateau(weeklyBestList, weeks = 3) {
 }
 
 /**
+ * Счёт объёма. `matrix` — справочник целиком: целевая группа 1, вторичная 0,5,
+ * косвенная 0,25. `audit` — как аудит Ц5 (решение атлета 29.10, ЦИКЛ-5.md §6):
+ * прямой 1, существенный косвенный 0,5, ярус 0,25 не считается; стойка,
+ * голеностоп и скакалка — не объём. Счёт объявляет план (`plan.volume.method`),
+ * у прошлых циклов его нет — матрица, и их таблицы не переписываются.
+ * Без смены счёта колонка «цель 12» показывала бы недобор лучше, чем он есть.
+ */
+export const NOT_VOLUME = /^(Стойка|Голеностоп|Скакалка)/;
+
+export function volumeCoef(name, k, method = 'matrix') {
+  if (method !== 'audit') return k;
+  return NOT_VOLUME.test(name) || k < 0.5 ? 0 : k;
+}
+
+/**
  * Недельный объём по группам. Второе значение — упражнения без коэффициентов:
  * молчаливый ноль хуже пустой строки, поэтому они возвращаются наружу (R32).
  */
-export function weeklyVolume(workouts, exercises) {
+export function weeklyVolume(workouts, exercises, { method = 'matrix' } = {}) {
   const coefs = new Map(exercises.map((e) => [e.name, e.groups || {}]));
   const out = {};
   const unknown = new Set();
@@ -120,7 +177,8 @@ export function weeklyVolume(workouts, exercises) {
       }
       if (Object.keys(groups).length === 0) continue;   // кардио вклада не даёт
       for (const [g, k] of Object.entries(groups)) {
-        out[g] = (out[g] || 0) + n * k;
+        const kk = volumeCoef(done, k, method);
+        if (kk) out[g] = (out[g] || 0) + n * kk;
       }
     }
   }

@@ -1,7 +1,9 @@
-import { fmtNum, fmtWeight } from '../lib/format.js';
+import { fmtNum, fmtWeight, measureText } from '../lib/format.js';
 import { pickPlan, sessionsFor } from '../plan.js';
 import { isoWeek, fromISO } from '../lib/dates.js';
 import { SIGNALS, KIND_RU } from './day-logic.js';
+import { plannedSeconds } from './stretch-block.js';
+import { repsPerSide, weightPerHand, restFeelText } from './workout-logic.js';
 
 const has = (v) => v !== null && v !== undefined;
 const same = (list) => list.every((v) => v === list[0]);
@@ -11,7 +13,7 @@ const same = (list) => list.every((v) => v === list[0]);
  * одна строка. Четыре одинаковых подхода несут одну мысль, а не четыре,
  * и повторять их в журнале значит прятать в шуме то, что менялось.
  */
-export function foldSets(sets) {
+export function foldSets(sets, { measure = null } = {}) {
   const groups = [];
   for (const s of sets || []) {
     // RPE из ключа исключён: разные 8,5 и 9,0 при одном весе разрывали группу
@@ -21,8 +23,8 @@ export function foldSets(sets) {
     // с повторами: Ролик «3×8 + 2×15 с» при весе тела давал одну группу,
     // мера бралась у первого подхода, и записанные пятнадцать секунд
     // печатались прочерком — данные есть, а на экране их нет.
-    const key = [s.weight, Boolean(s.warmup), Boolean(s.control),
-      s.minutes, s.km, s.hr, s.sec != null].join('|');
+    const key = [s.weight, Boolean(s.warmup), Boolean(s.control), Boolean(s.failure),
+      s.minutes, s.km, s.hr, s.sec != null, s.measure].join('|');
     const last = groups[groups.length - 1];
     if (last && last.key === key) last.items.push(s);
     else groups.push({ key, items: [s] });
@@ -56,16 +58,30 @@ export function foldSets(sets) {
     const hi = rpes.length ? Math.max(...rpes) : null;
 
     return {
-      weight: has(s.weight) ? fmtWeight(s.weight) : '—',
-      reps: repText,
+      // Ноль в записях до 29.10 — тот же вес тела: так его теперь и пишет форма.
+      // Ячейка стопки Hoist записана с 29.10 вместе с весом и печатается рядом.
+      weight: s.weight ? fmtWeight(s.weight) + (s.cell != null ? ` (яч. ${s.cell})` : '') : '—',
+      // Своя мера (стена, стопка) — часть ключа группы и печатается при повторах.
+      reps: repText + (has(s.measure) ? ` (${measureText(measure, s.measure)})` : ''),
       rpe: lo == null ? '' : (lo === hi ? fmtNum(lo, 1) : `${fmtNum(lo, 1)}–${fmtNum(hi, 1)}`),
-      mark: s.warmup ? 'разм.' : (s.control ? 'контроль' : null),
+      mark: s.warmup ? 'разм.' : (s.control ? 'контроль' : (s.failure ? 'отказ' : null)),
     };
   });
 }
 
+/**
+ * Единицы подхода словами — «кг на руку», «повторы на сторону». Только для
+ * сделанного по плану: у замены строка плана чужая.
+ */
+export function setUnits(ex, presc) {
+  if (!presc || ex.replacedWith) return null;
+  const out = [weightPerHand(presc) ? 'кг на руку' : null, repsPerSide(presc) ? 'повторы на сторону' : null]
+    .filter(Boolean);
+  return out.length ? out.join(' · ') : null;
+}
+
 /** Строка упражнения для журнала: название плюс свёрнутые группы подходов. */
-export function exerciseRow(ex) {
+export function exerciseRow(ex, presc = null) {
   // При замене показывается то, что делалось. Плановое название уходит
   // в подпись: пара «план → факт» в одну строку не влезает и обрезается
   // ровно там, где начинается смысл.
@@ -73,7 +89,8 @@ export function exerciseRow(ex) {
   const replaced = ex.replacedWith ? (ex.planName || ex.name) : null;
   // Разминка в запись дня не идёт: она не несёт ни объёма, ни прогрессии,
   // а места занимает столько же, сколько рабочий подход.
-  const groups = foldSets((ex.sets || []).filter((x) => !x.warmup));
+  const groups = foldSets((ex.sets || []).filter((x) => !x.warmup),
+    { measure: presc && !ex.replacedWith ? presc.measure : null });
   if (ex.skipped) {
     // Записанные подходы печатаются рядом с причиной. Раньше пропуск их
     // проглатывал: сделал два подхода становой, на третьем сел, нажал
@@ -85,8 +102,16 @@ export function exerciseRow(ex) {
       reason: ex.skipReason || 'без причины', note: ex.note || null,
     };
   }
-  if (!groups.length) return null;
-  return { name, replaced, skipped: false, groups, note: ex.note || null };
+  // Ни подходов, ни пропуска — строки нет. Кроме случая с заметкой: она
+  // объясняет, почему упражнение не закрыто (29.10, задняя дельта).
+  if (!groups.length) {
+    return ex.note ? { name, replaced, skipped: false, open: true, groups, note: ex.note } : null;
+  }
+  return {
+    name, replaced, skipped: false, groups, unit: setUnits(ex, presc),
+    variant: ex.replacedWith ? null : ex.variant || null,
+    restFeel: restFeelText(ex.restFeel), note: ex.note || null,
+  };
 }
 
 /** Отметки утреннего чек-ина, каждая с подписью. Пустые поля молчат. */
@@ -182,6 +207,12 @@ function mobilitySession(iso, day, plans) {
   // Сумма удержаний — то, ради чего секунды и пишутся: недельная доза
   // сравнивается с потолком 10 минут на группу (ИССЛЕДОВАНИЯ.md, запись 36).
   const total = done.reduce((a, n) => a + (has(secs[n]) ? secs[n] : 0), 0);
+  // Отмеченная позиция без цифры получает плановые секунды молча
+  // (`stretch-block.js`), поэтому цифра, равная плану, — не замер. Если так
+  // у всех отмеченных, доза печатается «по плану»: с 22.09 она одинакова
+  // во всех днях, 60 · 60 · 120 · 90 · 120, и читалась как измеренная.
+  const byPlan = (planned?.positions || []).filter((p) => marks[p.n])
+    .every((p) => !has(secs[p.n]) || secs[p.n] === plannedSeconds(p.dose));
 
   return {
     kind: 'mobility',
@@ -190,6 +221,7 @@ function mobilitySession(iso, day, plans) {
     done: done.length,
     total: planned?.positions?.length ?? null,
     seconds: total || null,
+    secondsPlanned: Boolean(total) && byPlan,
     names: names.length ? names : done.map((n) => `позиция ${n}`),
   };
 }
@@ -225,7 +257,7 @@ export function dayRecord(iso, ctx) {
     movedFrom: w.movedFrom || null,
     avgRPE: w.avgRPE,
     chestSignal: w.chestSignal,
-    rows: (w.exercises || []).map(exerciseRow).filter(Boolean),
+    rows: (w.exercises || []).map((e, i) => exerciseRow(e, (w.prescription || [])[i])).filter(Boolean),
   }));
 
   const mob = mobilitySession(iso, day, ctx.plans);

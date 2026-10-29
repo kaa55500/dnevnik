@@ -76,6 +76,13 @@ function exerciseTable(rows) {
         continue;
       }
     }
+    if (ex.open) {
+      table.append(el('div', { className: 'rec-row skip' },
+        el('span', { className: 'rec-name', textContent: ex.name }),
+        el('span', { className: 'rec-skip', textContent: 'не закрыто' })));
+      table.append(note(ex.note));
+      continue;
+    }
 
     ex.groups.forEach((g, i) => {
       // Название стоит только у первой группы: второй строкой идёт тот же
@@ -101,6 +108,10 @@ function exerciseTable(rows) {
     if (ex.replaced) {
       table.append(el('div', { className: 'rec-swap', textContent: `вместо: ${ex.replaced}` }));
     }
+    // Колонка «вес» одна на все упражнения: на руку или всего, видно только здесь.
+    if (ex.unit) table.append(el('div', { className: 'rec-swap', textContent: ex.unit }));
+    if (ex.variant) table.append(el('div', { className: 'rec-swap', textContent: `снаряд: ${ex.variant}` }));
+    if (ex.restFeel) table.append(el('div', { className: 'rec-swap', textContent: ex.restFeel }));
     if (ex.note) table.append(note(ex.note));
   }
   return table;
@@ -119,7 +130,8 @@ export function renderRecord(rec, { onOpen, onEdit } = {}) {
 
   for (const s of rec.sessions) {
     if (s.kind === 'mobility') {
-      const dose = s.seconds ? ` · ${Math.round(s.seconds / 6) / 10} мин` : '';
+      const dose = s.seconds
+        ? ` · ${Math.round(s.seconds / 6) / 10} мин${s.secondsPlanned ? ' по плану' : ''}` : '';
       box.append(caption('Растяжка',
         (s.total != null ? `${s.done} из ${s.total}` : `${s.done} позиций`) + dose));
       const list = el('div', { className: 'rec-stretch' });

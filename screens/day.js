@@ -244,7 +244,8 @@ export async function render(box, params = {}) {
       .filter((d) => d.sessions.some((s) => s.kind === 'mobility' && s.measureSplit))
       .map((d) => d.date)));
     const owed = debts({
-      today, dates: [...new Set(allDates)].sort(), splitDates, days, weeks, from: range.from, to: range.to,
+      today, dates: [...new Set(allDates)].sort(), splitDates, days, weeks, workouts,
+      from: range.from, to: range.to,
     });
     if (owed.length) {
       const card = el('section', { className: 'card debts' },
@@ -255,7 +256,13 @@ export async function render(box, params = {}) {
       const row = (o) => el('button', {
         className: 'debt-row',
         textContent: `${dm(o.date)} — ${o.title}`,
-        onclick: () => navigate('day', { date: o.date }),
+        // Черновик открывается сразу сессией: закрыть его — дело одного экрана.
+        // Неделя открывается своими замерами, а не воскресеньем на «Дне».
+        onclick: () => {
+          if (o.key === 'draft') return navigate('workout', { date: o.date, kind: o.kind, code: o.code });
+          if (o.key === 'week') return navigate('more', { section: 'week', week: o.week });
+          return navigate('day', { date: o.date });
+        },
       });
       const fresh = [...owed].reverse();
       for (const o of fresh.slice(0, HEAD)) card.append(row(o));

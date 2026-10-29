@@ -1,4 +1,4 @@
-import { parseNum } from '../lib/format.js';
+import { parseNum, fmtWeight } from '../lib/format.js';
 
 /** Первое число из строки: '22 кг/рук' -> 22, 'вес тела' -> null. */
 export function firstNumber(s) {
@@ -32,42 +32,295 @@ export function planReps(s) {
 }
 
 /**
- * Что подставить в поля следующего подхода.
- * Приоритет: предыдущий подход этой тренировки → прошлая тренировка → план.
+ * Подход с удержанием (CONTEXT.md): повторы и секунды — факт одного подхода.
+ * Ролик Ц4 нёс число секунд (`holdSec`), ролик Ц5 — только признак `hold`:
+ * доза удержания в плане не названа, а поля без признака гасили друг друга.
+ */
+export const isHoldSet = (presc) => presc.holdSec != null || presc.hold === true;
+
+/**
+ * Единицы подхода. Флаг справочника `perSide` склеивал два смысла: «вес на руку»
+ * (гантели, махи) и «повторы на сторону» (выпад голеностопа, казачий, косые).
+ * Форма подписывала «вес на сторону» выпаду с весом тела, а 01.10 косые
+ * записаны «20» при плане «10/ст» — цифра вдвое больше плановой единицы.
+ * Повторы на сторону читаются из строки плана, вес на руку — из флага,
+ * кроме веса тела и одного снаряда на двоих (гоблет).
+ */
+export const repsPerSide = (presc) => /\/\s*(ст|ногу|сторону|руку)(?!\p{L})/u
+  .test(String((presc && presc.reps) ?? ''));
+export const weightPerHand = (presc) => Boolean(presc && presc.perSide)
+  && !/вес тела|гоблет/.test(String(presc.weight ?? ''));
+
+/** Что сделано на деле: замена, если она есть, иначе плановое имя. */
+export const doneName = (ex) => ex.replacedWith || ex.name;
+
+/** Вариант снаряда упражнения совпадает с искомым; «основной» — `null`. */
+export const sameVariant = (ex, variant) => (ex.variant || null) === (variant || null);
+
+/**
+ * Рабочие подходы упражнения за прошлые тренировки, в порядке дат, — источник
+ * подстановки и строки «прошлый раз».
  *
- * RPE идёт по тому же приоритету, что вес и повторы. Раньше он всегда
- * откатывался к плановому: введёшь 8,5 при плановых 8 — и следующий подход
- * снова предлагает 8, то есть введённое не переживает даже одного подхода.
+ * Ищется то, что сделано на деле, а не плановое имя: 27.10 вертикальная тяга
+ * предложила 16×12, потому что 20.10 под её именем записан жим гири заменой,
+ * а 29.10 становая — 31,7×15 от сгибания ног. Черновики не в счёт: брошенная
+ * сессия 20.10 подставила в жим 90 при плане 100.
+ */
+export function exerciseHistory(workouts, name, { exceptId = null, upTo = null, variant = null } = {}) {
+  const rows = [];
+  for (const w of [...(workouts || [])].sort((a, b) => a.date.localeCompare(b.date))) {
+    if (w.id === exceptId || w.status !== 'done') continue;
+    // Открытая заранее сессия не должна тянуть вес из более поздней:
+    // история — то, что было до неё, а не то, что уже введено после.
+    if (upTo && w.date > upTo) continue;
+    const ex = (w.exercises || []).find((e) => doneName(e) === name);
+    // Вариант снаряда ведёт свой ряд (решение 29.10): веса кроссовера
+    // и гантелей в одну подстановку не смешиваются.
+    if (ex && !ex.skipped && sameVariant(ex, variant)) {
+      for (const s of ex.sets || []) if (!s.warmup) rows.push({ ...s, date: w.date });
+    }
+  }
+  return rows;
+}
+
+/**
+ * Повторы плана, которые можно подставить в поле. У чистого удержания
+ * повторов в плане нет: «удержание 25–35 с» даёт первое число, и форма звала
+ * записать 25 повторов стойки. Тогда берётся только явное «N×M» — у Ролика
+ * («3×6 + 2×15 с») повторы настоящие.
+ */
+function planRepsFor(presc, hold) {
+  if (hold && !isHoldSet(presc) && !EXPLICIT_REPS.test(String(presc.reps ?? ''))) return null;
+  return planReps(presc.reps);
+}
+
+/**
+ * Что подставить в поля следующего подхода.
+ * Приоритет: предыдущий подход этой тренировки → план → прошлая тренировка.
+ *
+ * План стоит выше истории (решение атлета 29.10): прогрессию задаёт план,
+ * и неделя с новым весом начиналась с прошлонедельного числа. История
+ * заполняет только то, чего в плане числом нет: «подбор», «макс», вес тела.
+ * Оба источника видны чипами над формой и ставятся касанием.
+ *
+ * RPE первого подхода не подставляется (решение 29.10): подставленное число
+ * сохранялось нетронутым, и датчик правила 4 читал план вместо оценки.
+ * План или прошлое идут подсказкой `rpeHint`. Внутри сессии RPE переносится
+ * с прошлого подхода: введёшь 8,5 при плановых 8 — следующий не откатывает к 8.
  */
 export function nextSetDefaults(presc, doneSets, history, opts = {}) {
   const working = (doneSets || []).filter((s) => !s.warmup);
+  const fromHistory = history && history.length ? history[history.length - 1] : null;
+  const rpeHint = presc.rpe ?? (fromHistory ? fromHistory.rpe ?? null : null);
   if (working.length) {
     const last = working[working.length - 1];
     return {
-      weight: last.weight, reps: last.reps, sec: last.sec ?? null,
-      rpe: last.rpe ?? presc.rpe ?? null,
+      weight: last.weight, reps: last.reps, sec: last.sec ?? null, cell: last.cell ?? null,
+      measure: last.measure ?? null, rpe: last.rpe ?? null, rpeHint,
     };
   }
-  const fromHistory = history && history.length ? history[history.length - 1] : null;
   // Пустой вес в истории плановый не отменяет: 17.09 под именем становой
   // записали гиперэкстензию без веса, и 24.09 форма спрятала поле веса.
-  const histWeight = fromHistory ? fromHistory.weight : null;
+  // Ноль в записях до 29.10 — вес тела, а не «0» в поле веса.
+  const planW = planWeight(presc.weight);
+  const planR = planRepsFor(presc, opts.hold);
   return {
-    weight: histWeight != null ? histWeight : planWeight(presc.weight),
-    // У чистого удержания повторов в плане нет: «удержание 25–35 с» даёт
-    // первое число, и форма звала записать 25 повторов стойки. Подставляем
-    // только явное «N×M» — у Ролика («3×6 + 2×15 с») повторы настоящие.
-    reps: fromHistory ? fromHistory.reps
-      : ((opts.hold && presc.holdSec == null && !EXPLICIT_REPS.test(String(presc.reps ?? '')))
-        ? null : planReps(presc.reps)),
+    weight: planW != null ? planW : ((fromHistory && fromHistory.weight) || null),
+    reps: planR != null ? planR : (fromHistory ? fromHistory.reps : null),
     // Секунды из плана не подставляются: «3×8 + 2×15 с» у Ролика значит,
     // что первые подходы идут в повторах, и предзаполненное поле удержания
     // звало бы записать не то, что делаешь.
     // Исключение — подход с удержанием (`holdSec` в плане): там секунды
     // часть каждого подхода, и план их задаёт числом.
     sec: fromHistory && fromHistory.sec != null ? fromHistory.sec : (presc.holdSec ?? null),
-    rpe: (fromHistory && fromHistory.rpe != null) ? fromHistory.rpe : (presc.rpe ?? null),
+    // Ячейка идёт вместе с весом, из которого взята: при плановом весе
+    // она считается по шкале, а не тянется из прошлого раза.
+    cell: planW == null && fromHistory ? fromHistory.cell ?? null : null,
+    // Своя мера (стена, стопка) идёт с прошлого раза: план её числом не задаёт.
+    measure: fromHistory ? fromHistory.measure ?? null : null,
+    rpe: null,
+    rpeHint,
   };
+}
+
+/**
+ * Чипы над формой: «план 100×5 @7» и «прошлый 90×6 @8». Касание ставит вес
+ * и повторы, RPE не трогает — это оценка подхода, а не цифра для копирования.
+ * Чип без единого числа не показывается: «план подбор» полей не заполнит.
+ */
+export function fillChips(presc, history, opts = {}) {
+  const out = [];
+  const planW = planWeight(presc.weight);
+  const planR = planRepsFor(presc, opts.hold);
+  if (planW != null || planR != null) {
+    out.push({ kind: 'plan', weight: planW, reps: planR, sec: null, cell: null, rpe: presc.rpe ?? null });
+  }
+  const last = history && history.length ? history[history.length - 1] : null;
+  if (last && (last.weight != null || last.reps != null || last.sec != null)) {
+    out.push({
+      kind: 'last', weight: last.weight || null, reps: last.reps ?? null,
+      sec: last.sec ?? null, cell: last.cell ?? null, rpe: last.rpe ?? null,
+    });
+  }
+  return out;
+}
+
+/** Подпись чипа: «план 100×5 @7», «прошлый в/т×12», «прошлый 102,1 (яч. 10)×15». */
+export function chipText(chip) {
+  const word = chip.kind === 'plan' ? 'план' : 'прошлый';
+  const amount = chip.sec != null
+    ? (chip.reps != null ? `${chip.reps}+${fmtWeight(chip.sec)} с` : `${fmtWeight(chip.sec)} с`)
+    : (chip.reps != null ? String(chip.reps) : '');
+  // Вес тела в прошлом подходе — «в/т»; у плана без числа веса это «подбор»
+  // или «вес тела», и чип просто молчит о весе.
+  const weight = chip.weight
+    ? fmtWeight(chip.weight) + (chip.cell != null ? ` (яч. ${chip.cell})` : '')
+    : (chip.kind === 'last' ? 'в/т' : '');
+  const body = weight && amount ? `${weight}×${amount}` : (weight || amount);
+  return `${word} ${body}` + (chip.rpe != null ? ` @${fmtWeight(chip.rpe)}` : '');
+}
+
+/**
+ * Где спрашивать RPE (решение атлета 29.10): у всех силовых, а не только
+ * там, где в плане есть число. Навыку RPE не ставится — критерий там распад
+ * техники; класс навыка план Ц4–Ц5 несёт в `zoneClass`. У Ц3 класса нет,
+ * там действует прежнее правило: число RPE в плане.
+ *
+ * Внеплановое упражнение и контрольный подход спрашивают RPE всегда: доделанный
+ * жим без класса записывался как навык, а 5ПМ при RPE 10 и при 8 — разные базы.
+ * Кардио вместо RPE пишет пульс тем же полем.
+ */
+export function asksRPE(presc, ex, kind) {
+  if (kind === 'cardio') return true;
+  if (presc.control || presc.unplanned || (ex && ex.unplanned)) return true;
+  if (kind === 'skill' && !presc.zoneClass) return false;
+  if (presc.zoneClass) return presc.zoneClass !== 'skill';
+  return presc.rpe != null;
+}
+
+/**
+ * «+ ещё N таких» в режиме «потом» (решение атлета 29.10): копии последнего
+ * рабочего подхода — вес, повторы, секунды, ячейка. Отдыха и перехода
+ * у копий нет: их никто не мерил. RPE не размножается — оценка была одна,
+ * и четыре одинаковые цифры выдали бы её за четыре. Метки контроля и отказа
+ * принадлежат своему подходу и тоже не копируются.
+ */
+export function copiesOfLast(sets, n) {
+  const working = (sets || []).filter((s) => !s.warmup);
+  const last = working[working.length - 1];
+  if (!last || !(n > 0)) return [];
+  return Array.from({ length: n }, () => ({
+    weight: last.weight ?? null,
+    reps: last.reps ?? null,
+    sec: last.sec ?? null,
+    ...(last.cell != null ? { cell: last.cell } : {}),
+    ...(last.measure != null ? { measure: last.measure } : {}),
+    rpe: null,
+    rest: null,
+    warmup: false,
+    control: false,
+  }));
+}
+
+/**
+ * Отдых на контрольном лифте — выбором на упражнение (решение атлета 29.10).
+ * «По плану» — значение по умолчанию и не печатается: в записи видно только
+ * отклонение, ради которого отметка заведена — по нему читается RPE.
+ */
+export const REST_FEEL = { plan: 'по плану', longer: 'дольше', shorter: 'короче' };
+export const restFeelText = (v) => (v === 'longer' || v === 'shorter'
+  ? `отдых ${REST_FEEL[v]} плана` : null);
+
+/**
+ * Причина пропуска — кнопкой (решение атлета 29.10): разбор план-факт читает
+ * её числом случаев, а текст «не успел»/«нет времени»/«время» склеивался
+ * только глазами. Текст остаётся по желанию; у сигнала здоровья он обязателен —
+ * одно слово, где, — и запись идёт в разбор эпизодом здоровья.
+ */
+export const SKIP_KINDS = {
+  time: 'время', fatigue: 'усталость', health: 'сигнал здоровья', move: 'перенос →', declined: 'не стал',
+};
+
+/** Пропуск с причиной. `moveTo` — сессия переноса: `{ date, kind, code }`. */
+export function skipAs(ex, kind, text = '', moveTo = null) {
+  const t = String(text || '').trim();
+  ex.skipped = true;
+  // Без кнопки — прежний путь: причина одним текстом.
+  if (!SKIP_KINDS[kind]) {
+    delete ex.skipKind;
+    delete ex.skipMoveTo;
+    ex.skipReason = t || 'без причины';
+    return ex;
+  }
+  const head = kind === 'move' && moveTo
+    ? `перенос → ${moveTo.label || `${moveTo.date} ${moveTo.code}`}`
+    : SKIP_KINDS[kind];
+  ex.skipKind = kind;
+  ex.skipReason = t ? `${head}: ${t}` : head;
+  if (kind === 'move' && moveTo) ex.skipMoveTo = { date: moveTo.date, kind: moveTo.kind, code: moveTo.code };
+  else delete ex.skipMoveTo;
+  return ex;
+}
+
+/**
+ * Куда перенести: ближайшие силовые и навыковые сессии плана в течение недели
+ * после этой (`trainingSessions` из `plan.js`). Кардио — не место для подхода.
+ */
+export function moveTargets(sessions, workout, limit = 3) {
+  const to = new Date(Date.parse(workout.date) + 7 * 86400000).toISOString().slice(0, 10);
+  return (sessions || [])
+    .filter((s) => s.date > workout.date && s.date <= to && (s.kind === 'gym' || s.kind === 'skill'))
+    .slice(0, limit);
+}
+
+/**
+ * Перенесённое в эту сессию и ещё не вставленное: упражнения других
+ * тренировок с `skipMoveTo` на эту дату, вид и код. Вставляется руками —
+ * «плановые в начатую сессию не дописываются», перенос идёт «вне плана».
+ */
+export function incomingMoves(workouts, workout) {
+  const out = [];
+  for (const w of workouts || []) {
+    if (w.id != null && w.id === workout.id) continue;
+    (w.exercises || []).forEach((e, i) => {
+      const m = e.skipMoveTo;
+      if (!e.skipped || !m || m.date !== workout.date || m.kind !== workout.kind
+          || m.code !== workout.dayCode) return;
+      const name = doneName(e);
+      const placed = (workout.exercises || []).some((x) => x.movedFrom === w.date && x.name === name);
+      if (!placed) out.push({ name, from: w.date, fromCode: w.dayCode, presc: (w.prescription || [])[i] || {} });
+    });
+  }
+  return out;
+}
+
+/**
+ * Вставка перенесённого: «вне плана», но с плановой дозой исходной сессии —
+ * подстановка и «+ ещё N таких» работают как на своём месте.
+ */
+export function insertMoved(workout, at, move) {
+  const i = insertExercise(workout, at, move.name);
+  const { name, sets, reps, weight, rpe, rest, zoneClass, measure, machine, perSide } = move.presc;
+  workout.prescription[i] = {
+    ...Object.fromEntries(Object.entries({
+      name, sets, reps, weight, rpe, rest, zoneClass, measure, machine, perSide,
+    }).filter(([, v]) => v !== undefined)),
+    name: move.name, unplanned: true, movedFrom: move.from,
+  };
+  workout.exercises[i].movedFrom = move.from;
+  return i;
+}
+
+/**
+ * Следующее незакрытое упражнение после `index` или `null`. Им уводят пропуск
+ * и «+ ещё N таких»: следующий шаг всё равно делался стрелкой.
+ */
+export function nextOpenAfter(workout, index) {
+  const list = workout.exercises || [];
+  for (let i = index + 1; i < list.length; i += 1) {
+    if (!exerciseClosed(list[i], (workout.prescription || [])[i] || {})) return i;
+  }
+  return null;
 }
 
 /**
@@ -78,7 +331,7 @@ export function nextSetDefaults(presc, doneSets, history, opts = {}) {
  * вес в килограммах (`planWeight`).
  */
 export function bodyweightForm(presc, defaults, cardio) {
-  if (cardio || presc.perSide) return false;
+  if (cardio || weightPerHand(presc)) return false;
   return defaults.weight == null && firstNumber(presc.weight) == null;
 }
 
@@ -229,6 +482,48 @@ export function insertExercise(workout, index, name) {
     skipped: false, skipReason: null, note: '', sets: [],
   });
   return at;
+}
+
+/**
+ * Убирает упражнение, вставленное по ошибке (заметка атлета 18.10: обратная
+ * бабочка «хочу удалить, но не могу» осталась пропуском в записи дня).
+ * Только вне плана и только без подходов: плановое живёт с тренировкой, с
+ * которой она стартовала, а записанное — факт. Возвращает убранное или null.
+ */
+export function removeUnplanned(workout, index) {
+  const ex = (workout.exercises || [])[index];
+  if (!ex || !ex.unplanned || (ex.sets || []).length) return null;
+  const [removed] = workout.exercises.splice(index, 1);
+  const [presc] = (workout.prescription || []).splice(index, 1);
+  return { ex: removed, presc, index };
+}
+
+/**
+ * Проверка подхода перед записью. Отвергает то, чего не бывает, и спрашивает
+ * о том, что похоже на опечатку, — молча не правит ничего, кроме веса 0.
+ * Из бэкапа 29.10: гребля дважды записана метрами в поле «км» (2000 и 3200),
+ * у 11 подходов с весом тела стоит 0 вместо «в/т».
+ * Возвращает `{ set, ask: [{ msg, fix }], block }`.
+ */
+export function checkSetInput(set, { cardio = false } = {}) {
+  const out = { set: { ...set }, ask: [], block: null };
+  if (cardio) {
+    if (set.km != null && set.km > 50) {
+      out.ask.push({
+        msg: `${fmtWeight(set.km)} км — похоже на метры. Записать ${fmtWeight(set.km / 1000)} км?`,
+        fix: { km: Math.round(set.km) / 1000 },
+      });
+    }
+    if (set.hr != null && (set.hr < 40 || set.hr > 220)) out.block = `Пульс ${set.hr} — вне 40–220.`;
+    return out;
+  }
+  // Ноль килограммов значит «без отягощения»: так он и пишется — `null`,
+  // «в/т», а не число, которое потом сравнивается с настоящими весами.
+  if (set.weight === 0) out.set.weight = null;
+  if (set.rpe != null && (set.rpe < 1 || set.rpe > 10)) {
+    out.block = `RPE ${fmtWeight(set.rpe)} — вне шкалы 1–10.`;
+  }
+  return out;
 }
 
 /** Упражнения, по которым считается «план закрыт»: без бонуса и внеплановых. */

@@ -1,4 +1,4 @@
-import { fromISO, isoWeek } from '../lib/dates.js';
+import { fromISO, isoWeek, addDays, weekDays } from '../lib/dates.js';
 
 const WED = 3;
 const SUN = 0;
@@ -8,6 +8,31 @@ const SUN = 0;
 // стояла здесь с 02.09 как объявленная цель года; снята 22.09: до Ц9 её нет
 // в программе, и строка была бы вечным долгом без дела. Цель остаётся слепой.
 const WEEK_REQUIRED = ['kcalAvg', 'proteinAvg', 'handstandSec'];
+const WEEK_LABEL = { kcalAvg: 'ккал', proteinAvg: 'белок', handstandSec: 'стойка' };
+
+/**
+ * Незакрытые обязательные строки недели словами: «ккал, белок». Талия и просвет
+ * висят своими долгами по датам замера, фото обязательной строкой не является.
+ */
+export function weekMissing(week) {
+  const w = week || {};
+  if ((w.skipped || {}).week) return [];
+  return WEEK_REQUIRED.filter((k) => empty(w[k])).map((k) => WEEK_LABEL[k]);
+}
+
+/**
+ * Прошлая неделя ещё ждёт ккал и белок (решение атлета 29.10): в Пн–Вт она
+ * висит долгом и открывается по умолчанию в «Замерах недели». Ккал — среднее
+ * FatSecret за неделю, его вносят после воскресенья, а не в воскресенье утром.
+ */
+export function openPastWeek(today, weeks) {
+  const dow = weekday(today);
+  if (dow !== 1 && dow !== 2) return null;
+  const id = isoWeek(addDays(today, -7));
+  const week = (weeks || []).find((w) => w.id === id) || { id };
+  const missing = weekMissing(week);
+  return missing.length ? { id, missing } : null;
+}
 
 /** Цифры утреннего чек-ина. */
 const MORNING_FIELDS = ['weight', 'sleepHours', 'sleepQuality', 'restingHR', 'bpSys', 'bpDia'];
@@ -269,5 +294,32 @@ export function debts(ctx) {
       out.push({ date, key: 'waist', title: 'талия' });
     }
   }
-  return out;
+
+  // Прошлая неделя без ккал, белка или стойки — долгом в Пн–Вт (29.10). Дата —
+  // её воскресенье; закрытого цикла неделя не касается, как и строки выше.
+  const pastWeek = openPastWeek(ctx.today, ctx.weeks);
+  if (pastWeek) {
+    const sunday = weekDays(pastWeek.id)[6];
+    if (!(ctx.from && sunday < ctx.from) && !(ctx.to && sunday > ctx.to)) {
+      out.push({
+        date: sunday, key: 'week', week: pastWeek.id,
+        title: `неделя не закрыта: ${pastWeek.missing.join(', ')}`,
+      });
+    }
+  }
+
+  // Черновик прошедшего дня — тренировка начата и не закрыта. Висит долгом
+  // и за границей цикла: данные в нём есть, а «Сила», «Объём» и датчик
+  // правила 4 видят только закрытые сессии. 20.10 и 22.10 выпали так из Н5 Ц4
+  // целиком, и ничто об этом не сказало. Пустой черновик — открытый
+  // по ошибке режим, а не тренировка: долгом не висит.
+  for (const w of ctx.workouts || []) {
+    if (w.status !== 'draft' || w.date >= ctx.today) continue;
+    if (!(w.exercises || []).some((e) => (e.sets || []).length || e.skipped)) continue;
+    out.push({
+      date: w.date, key: 'draft', kind: w.kind, code: w.dayCode,
+      title: `тренировка ${w.dayCode || w.title || ''} не закрыта`,
+    });
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date));
 }

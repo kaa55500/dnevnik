@@ -1,7 +1,9 @@
 import { listDays, listWorkouts, getExercises, getSettings, listWeeks, listPlans } from '../store.js';
-import { pickPlan, planRange, mevFor, targetsFor } from '../plan.js';
 import {
-  movingAverage, trendPerWeek, forecastDate, weeklyBest, detectPlateau,
+  pickPlan, planRange, mevFor, targetsFor, volumeMethod, groupLabel, volumeTarget,
+} from '../plan.js';
+import {
+  movingAverage, trendPerWeek, forecastDate, weeklyBest, detectPlateau, weightSeries,
   weeklyVolume, readinessFlags, paceAdvice,
 } from '../analytics.js';
 import { sparkline } from '../charts.js';
@@ -34,9 +36,7 @@ function table(rows) {
 }
 
 function bodyPane(pane, { days, weeks, settings, plan, plans }) {
-  const series = days.filter((d) => d.weight != null)
-    .map((d) => ({ date: d.date, value: d.weight }))
-    .sort((a, b) => a.date.localeCompare(b.date));
+  const series = weightSeries(days);
 
   if (series.length === 0) {
     pane.append(el('p', { textContent: 'Веса ещё нет. Заполни утренний чек-ин.' }));
@@ -57,10 +57,12 @@ function bodyPane(pane, { days, weeks, settings, plan, plans }) {
     }));
   }
 
-  if (series.length < 7) {
+  // Среднее считается по календарной неделе, а не по семи записям: подсказка
+  // ждёт, пока ряд накроет неделю, а не седьмого взвешивания.
+  if (!avg.length) {
     pane.append(el('p', {
       className: 'hint',
-      textContent: `Точек веса: ${series.length}. Скользящее среднее появится с седьмой.`,
+      textContent: `Точек веса: ${series.length}. Среднее за 7 дней появится, когда ряд накроет неделю.`,
     }));
   }
 
@@ -110,6 +112,24 @@ function bodyPane(pane, { days, weeks, settings, plan, plans }) {
   }
 }
 
+/**
+ * Строка о черновиках с подходами: «Сила» и «Объём» считают только закрытые
+ * сессии и раньше молчали о выпавших — W43 показывала «сессий 0» при двух
+ * начатых тренировках (20.10, 22.10). Тап открывает самый ранний черновик.
+ */
+function draftLine(drafts) {
+  const open = drafts.filter((w) => w.status === 'draft'
+    && (w.exercises || []).some((e) => (e.sets || []).length))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (!open.length) return null;
+  const first = open[0];
+  return el('button', {
+    className: 'debt-row',
+    textContent: `не закрыто черновиков: ${open.length} — в счёт не идут →`,
+    onclick: () => navigate('workout', { date: first.date, kind: first.kind, code: first.dayCode }),
+  });
+}
+
 function strengthPane(pane, { workouts: all }) {
   // Только закрытые сессии — так же, как в своде недели и на вкладке объёма.
   // Черновик с опечаткой в повторах («105 × 40» вместо «× 4») давал 245 кг
@@ -117,21 +137,34 @@ function strengthPane(pane, { workouts: all }) {
   // все следующие недели заведомо ниже. И это на контрольном лифте, по
   // которому меряется цель 140 кг.
   const workouts = all.filter((w) => w.status === 'done');
-  const names = [...new Set(workouts.flatMap((w) =>
-    (w.exercises || []).filter((e) => !e.skipped && (e.sets || []).length).map((e) => e.name)))].sort();
+  const drafts = draftLine(all);
+  if (drafts) pane.append(drafts);
+  // Строка — то, что делалось: замена своей строкой (у плановой её подходов нет),
+  // вариант снаряда — своей строкой рядом с основным (решение 29.10).
+  const keys = new Map();
+  for (const w of workouts) {
+    for (const e of w.exercises || []) {
+      if (e.skipped || !(e.sets || []).length) continue;
+      const name = e.replacedWith || e.name;
+      const variant = e.replacedWith ? null : (e.variant || null);
+      keys.set(`${name}|${variant || ''}`, { name, variant });
+    }
+  }
+  const rows = [...keys.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru')
+    || String(a.variant || '').localeCompare(String(b.variant || ''), 'ru'));
 
-  if (!names.length) {
+  if (!rows.length) {
     pane.append(el('p', { textContent: 'Ещё нет записанных подходов.' }));
     return;
   }
 
-  for (const name of names) {
-    const best = weeklyBest(workouts, name);
+  for (const { name, variant } of rows) {
+    const best = weeklyBest(workouts, name, variant);
     if (!best.length) continue;
     const plateau = detectPlateau(best);
     const row = el('div', { className: 'strength-row' });
     row.append(el('h3', {
-      textContent: name + (plateau ? '  · плато' : ''),
+      textContent: name + (variant ? ` · ${variant}` : '') + (plateau ? '  · плато' : ''),
       className: plateau ? 'plateau' : '',
     }));
     row.append(el('div', {
@@ -146,17 +179,25 @@ function volumePane(pane, { workouts, exercises, settings, plan }) {
   const week = isoWeek(todayISO());
   const dates = weekDays(week);
   const wk = workouts.filter((w) => dates.includes(w.date) && w.status === 'done');
-  const { volume, unknown } = weeklyVolume(wk, exercises);
+  const method = volumeMethod(plan);
+  const { volume, unknown } = weeklyVolume(wk, exercises, { method });
   const mev = mevFor(plan, settings);
 
   pane.append(el('p', {
     textContent: `Неделя ${week} · сессий ${wk.length}`
       + (plan ? ` · пороги фазы «${PHASE_RU[plan.phase] || plan.phase}»` : ' · пороги по умолчанию'),
   }));
+  const drafts = draftLine(workouts.filter((w) => dates.includes(w.date)));
+  if (drafts) pane.append(drafts);
 
+  // Цель ★★★ — рядом с порогом: порог урезан до плана и недобор, заложенный
+  // в план, не видит; цель видит (п. 17 очереди).
   const rows = Object.entries(mev).map(([g, threshold]) => {
     const v = volume[g] || 0;
-    return [g, `${fmtNum(v, 1)} / MEV ${threshold}`, v < threshold ? 'low' : ''];
+    const target = volumeTarget(plan, g);
+    return [groupLabel(plan, g),
+      `${fmtNum(v, 1)} / MEV ${threshold}` + (target != null ? ` · цель ${target}` : ''),
+      v < threshold ? 'low' : ''];
   });
   pane.append(table(rows));
 
@@ -168,7 +209,10 @@ function volumePane(pane, { workouts, exercises, settings, plan }) {
 
   pane.append(el('p', {
     className: 'hint',
-    textContent: 'Эффективные подходы: целевая группа 1, вторичная 0,5, косвенная 0,25.',
+    textContent: method === 'audit'
+      ? 'Подходы — как в аудите цикла: целевая группа 1, существенная 0,5;'
+        + ' косвенная 0,25, стойка и голеностоп не считаются. Цель — доза групп ★★★.'
+      : 'Эффективные подходы: целевая группа 1, вторичная 0,5, косвенная 0,25.',
   }));
 }
 

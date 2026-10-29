@@ -1,6 +1,9 @@
 import { weekDays } from './lib/dates.js';
-import { fmtNum, fmtSigned, fmtWeight } from './lib/format.js';
-import { weeklyVolume, trendPerWeek } from './analytics.js';
+import { fmtNum, fmtSigned, fmtWeight, measureText } from './lib/format.js';
+import { weeklyVolume, trendPerWeek, weightSeries } from './analytics.js';
+import { sessionsFor, volumeMethod, volumeTarget } from './plan.js';
+import { plannedSeconds } from './screens/stretch-block.js';
+import { repsPerSide, weightPerHand, restFeelText } from './screens/workout-logic.js';
 
 const SCHEMA = 2;
 
@@ -11,27 +14,35 @@ const cell = (v) => {
 
 export function toCSV(workouts) {
   const head = 'дата;неделя;день;упражнение;подход;вес;повторы;удержание,с;RPE;отдых;'
-    + 'минуты;км;пульс;замена;пропуск;причина';
+    + 'минуты;км;пульс;замена;пропуск;причина;вес на руку;повторы на сторону;ячейка;отказ;'
+    + 'мера;отдых упр.;вариант';
   const rows = [head];
   for (const w of [...workouts].sort((a, b) => a.date.localeCompare(b.date))) {
-    for (const ex of w.exercises || []) {
+    for (const [k, ex] of (w.exercises || []).entries()) {
+      // Единицы — последними колонками, чтобы прежние не сдвинулись.
+      const presc = ex.replacedWith ? {} : ((w.prescription || [])[k] || {});
+      const units = [weightPerHand(presc) ? 'да' : '', repsPerSide(presc) ? 'да' : ''];
       // Пропуск без единого подхода — одна строка с причиной. Пропуск после
       // записанных подходов печатает и подходы тоже: они сделаны, и терять их
       // в выгрузке нельзя. Признак пропуска стоит в каждой строке упражнения.
       const skip = ex.skipped ? 'да' : '';
       const reason = ex.skipped ? (ex.skipReason || '') : '';
+      // Отдых на контрольном лифте — на упражнение, «по плану» молчит.
+      const feel = ex.restFeel && ex.restFeel !== 'plan' ? ex.restFeel : '';
+      const variant = ex.replacedWith ? '' : (ex.variant || '');
       const sets = ex.sets || [];
       if (ex.skipped && !sets.length) {
         rows.push([w.date, w.weekN, w.dayCode, ex.name, '', '', '', '', '', '',
           '', '', '',
-          ex.replacedWith || '', skip, reason].map(cell).join(';'));
+          ex.replacedWith || '', skip, reason, ...units, '', '', '', feel, variant].map(cell).join(';'));
         continue;
       }
       sets.forEach((s, i) => {
         rows.push([w.date, w.weekN, w.dayCode, ex.name, i + 1,
           s.weight, s.reps, s.sec, s.rpe, s.rest,
           s.minutes, s.km, s.hr,
-          ex.replacedWith || '', skip, reason].map(cell).join(';'));
+          ex.replacedWith || '', skip, reason, ...units,
+          s.cell, s.failure ? 'да' : '', s.measure, feel, variant].map(cell).join(';'));
       });
     }
   }
@@ -44,14 +55,13 @@ const short = (g) => g.replace(/\s*★+/g, '');
 export function weeklySummary({ weekId, days, week, workouts, exercises, settings, plan }) {
   const dates = weekDays(weekId);
   const inWeek = (days || []).filter((d) => dates.includes(d.date));
-  const avg = mean(inWeek.map((d) => d.weight).filter((v) => v != null));
+  const avg = mean(weightSeries(inWeek).map((p) => p.value));
 
-  const series = (days || []).filter((d) => d.weight != null)
-    .map((d) => ({ date: d.date, value: d.weight }));
+  const series = weightSeries(days);
   const trend = trendPerWeek(series);
 
   const wk = (workouts || []).filter((w) => dates.includes(w.date) && w.status === 'done');
-  const { volume: vol, unknown } = weeklyVolume(wk, exercises || []);
+  const { volume: vol, unknown } = weeklyVolume(wk, exercises || [], { method: volumeMethod(plan) });
 
   // Разминочные в средний RPE не идут — так же, как в `averageRPE` и в своде
   // сессии. Поле RPE предзаполняется плановым значением, и разминочный,
@@ -90,9 +100,14 @@ export function weeklySummary({ weekId, days, week, workouts, exercises, setting
   const stretchDays = inWeek.filter((d) => Object.values(d.stretch || {}).some(Boolean));
   const holdSec = inWeek.reduce(
     (a, d) => a + Object.values(d.stretchSec || {}).reduce((x, v) => x + (v || 0), 0), 0);
+  // Секунды, равные плану, — не замер: отметка без цифры получает план молча.
+  const positions = (iso) => (sessionsFor(plan, iso).map((x) => x.session)
+    .find((x) => x.kind === 'mobility')?.positions) || [];
+  const byPlan = stretchDays.every((d) => positions(d.date).filter((p) => (d.stretch || {})[p.n])
+    .every((p) => (d.stretchSec || {})[p.n] == null || d.stretchSec[p.n] === plannedSeconds(p.dose)));
   if (stretchDays.length || holdSec) {
     lines.push(`растяжка ${stretchDays.length} дн`
-      + (holdSec ? ` · удержаний ${fmtNum(holdSec / 60, 1)} мин` : ''));
+      + (holdSec ? ` · удержаний ${fmtNum(holdSec / 60, 1)} мин${byPlan ? ' по плану' : ''}` : ''));
   }
 
   if (week?.splitGap != null) {
@@ -125,6 +140,16 @@ export function weeklySummary({ weekId, days, week, workouts, exercises, setting
         lines.push(`! ${short(g)} ниже MEV: ${fmtNum(v, 0)} из ${need}`);
       }
     }
+    // Группы ★★★ ниже цели цикла — одной строкой: порог урезан до плана,
+    // и заложенный в план недобор видит только цель (п. 17 очереди).
+    const lowTarget = Object.keys(mev).filter((g) => {
+      const t = volumeTarget(plan, g);
+      return t != null && (vol[g] || 0) < t;
+    });
+    if (lowTarget.length) {
+      lines.push(`★★★ ниже цели ${plan.volume.target}: `
+        + lowTarget.map((g) => `${short(g)} ${fmtNum(vol[g] || 0, 0)}`).join(', '));
+    }
   }
 
   return lines.join('\n');
@@ -139,20 +164,30 @@ export function sessionSummary(workout) {
     + (workout.backdated ? ' · записано задним числом' : '');
   const lines = [head];
 
-  for (const ex of workout.exercises || []) {
-    const name = ex.replacedWith ? `${ex.planName} → ${ex.replacedWith}` : ex.name;
+  for (const [i, ex] of (workout.exercises || []).entries()) {
+    // Вариант снаряда (29.10) — в скобках: то же упражнение, свой ряд весов.
+    const name = ex.replacedWith ? `${ex.planName} → ${ex.replacedWith}`
+      : ex.name + (ex.variant ? ` (${ex.variant})` : '');
+    // Единицы — по строке плана; у замены она чужая.
+    const presc = ex.replacedWith ? {} : ((workout.prescription || [])[i] || {});
+    const perHand = weightPerHand(presc) ? '/рук' : '';
+    const perSide = repsPerSide(presc) ? '/ст' : '';
     // Разминка в своде не печатается: разбор в чате идёт по рабочим подходам.
     const sets = (ex.sets || []).filter((x) => !x.warmup);
-    if (ex.skipped && !sets.length) {
-      lines.push(`${name}: пропуск — ${ex.skipReason || 'без причины'}`);
+    if (!sets.length) {
+      // Заметка упражнения без подходов — тоже факт: 29.10 «верх перегружен,
+      // на первой неделе отменил» к задней дельте не попала ни в свод,
+      // ни в запись дня и осталась видна только в бэкапе.
+      if (ex.skipped) lines.push(`${name}: пропуск — ${ex.skipReason || 'без причины'}`);
+      else if (ex.note) lines.push(`${name}: не закрыто`);
+      if (ex.note) lines.push(`  ! ${ex.note}`);
       continue;
     }
-    if (!sets.length) continue;
     const body = sets.map((s) => {
       const rpe = s.rpe != null ? ` @${fmtNum(s.rpe, 1)}` : '';
       // Разминочные сюда не доходят: они отфильтрованы выше решением 02.09.
       // Ветка «разм.» была недостижима и читалась как «разминочные бывают».
-      const mark = s.control ? ' контроль' : '';
+      const mark = (s.control ? ' контроль' : '') + (s.failure ? ' отказ' : '');
       // Кардио меряется минутами и километрами: «в/т×null» здесь врало.
       if (s.minutes != null || s.km != null) {
         const parts = [];
@@ -161,19 +196,24 @@ export function sessionSummary(workout) {
         if (s.hr != null) parts.push(`пульс ${s.hr}`);
         return parts.join(' · ') + rpe + mark;
       }
-      const w = s.weight == null ? 'в/т' : fmtWeight(s.weight);
+      // Ноль в записях до 29.10 — тот же вес тела.
+      const w = !s.weight ? 'в/т'
+        : fmtWeight(s.weight) + perHand + (s.cell != null ? `(яч.${s.cell})` : '');
       const rest = s.rest != null ? ` /${Math.round(s.rest)}с` : '';
       // Переход — пауза перед первым подходом упражнения (26.09), не отдых.
       const trans = s.transition != null ? ` переход ${Math.round(s.transition)}с` : '';
       // Удержание пишется своей мерой: «в/т×null» было ровно тем, чем
       // выглядело — подходом, который в своде не читается. Подход
       // с удержанием несёт обе цифры.
-      const amount = s.sec != null
+      const amount = (s.sec != null
         ? (s.reps != null ? `${s.reps}+${fmtWeight(s.sec)}с` : `${fmtWeight(s.sec)}с`)
-        : String(s.reps);
+        : String(s.reps) + perSide)
+        + (s.measure != null ? ` ${measureText(presc.measure, s.measure)}` : '');
       return `${w}×${amount}${rpe}${trans}${rest}${mark}`;
     }).join(' · ');
-    const tail = ex.skipped ? ` · пропуск — ${ex.skipReason || 'без причины'}` : '';
+    const feel = restFeelText(ex.restFeel);
+    const tail = (feel ? ` · ${feel}` : '')
+      + (ex.skipped ? ` · пропуск — ${ex.skipReason || 'без причины'}` : '');
     lines.push(`${name}: ${body}${tail}`);
     if (ex.note) lines.push(`  ! ${ex.note}`);
   }
@@ -215,6 +255,33 @@ export function parseBackup(text) {
     }
   }
   return obj;
+}
+
+/**
+ * Файл через «Поделиться» (решение атлета 29.10): бэкап уходит сразу в чат,
+ * почту или «Файлы», а не в загрузки Safari, откуда его ещё надо достать.
+ * Без поддержки отправки файлов — прежнее скачивание. Ответ — что вышло:
+ * `shared`, `cancelled` (закрыл лист — копии нет) или `downloaded`.
+ *
+ * До `navigator.share` здесь нет ни одного `await`: браузер пускает отправку
+ * только из касания, и любое ожидание перед ней касание теряет. Отказ по этой
+ * или любой другой причине, кроме закрытого листа, — скачивание: копия важнее
+ * способа её доставки.
+ */
+export async function shareFile(filename, text, mime = 'application/json') {
+  const nav = globalThis.navigator;
+  const file = typeof File === 'function' ? new File([text], filename, { type: mime }) : null;
+  if (file && nav && typeof nav.share === 'function' && typeof nav.canShare === 'function'
+      && nav.canShare({ files: [file] })) {
+    try {
+      await nav.share({ files: [file], title: filename });
+      return 'shared';
+    } catch (err) {
+      if (err && err.name === 'AbortError') return 'cancelled';
+    }
+  }
+  download(filename, text, mime);
+  return 'downloaded';
 }
 
 export function download(filename, text, mime = 'application/json') {

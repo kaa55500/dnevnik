@@ -1,11 +1,13 @@
 import {
   getWeek, putWeek, getSettings, putSettings, putPlan, listPlans,
-  getExercises, dumpAll, restoreAll, listWorkouts, listDays, listWeeks,
+  getExercises, restoreAll, listWorkouts, listDays, listWeeks,
 } from '../store.js';
 import { pickPlan, nutritionFor, targetsFor, anyMobility } from '../plan.js';
 import { validatePlan } from '../plan.js';
 import { toCSV, weeklySummary, parseBackup, download } from '../export.js';
-import { todayISO, isoWeek, weekDays, dm } from '../lib/dates.js';
+import { todayISO, isoWeek, weekDays, dm, addDays } from '../lib/dates.js';
+import { openPastWeek } from './day-logic.js';
+import { backupSender } from './backup-note.js';
 import { parseNum } from '../lib/format.js';
 import { etalonBlock } from './etalon.js';
 import { applySplit } from './stretch-block.js';
@@ -122,7 +124,11 @@ const SECTIONS = {
 
 export async function render(box, params = {}) {
   const section = SECTIONS[params.section] ? params.section : null;
-  const weekId = params.week || isoWeek(todayISO());
+  // В Пн–Вт «Замеры недели» открываются прошлой неделей, пока в ней нет ккал,
+  // белка или стойки (решение 29.10): среднее FatSecret вносят после воскресенья.
+  const today = todayISO();
+  const pastWeek = params.week ? null : openPastWeek(today, await listWeeks());
+  const weekId = params.week || (pastWeek ? pastWeek.id : isoWeek(today));
   const [week, settings, plans] = await Promise.all([
     getWeek(weekId), getSettings(), listPlans(),
   ]);
@@ -133,7 +139,9 @@ export async function render(box, params = {}) {
   box.append(head(section ? SECTIONS[section] : 'Ещё', section ? back : null));
 
   if (!section) {
-    menu(box, { weekId, settings, plan, plans });
+    // «Не закрыта» — только у прошлой недели в Пн–Вт: текущая не закрыта
+    // по определению, и подпись горела бы всю неделю.
+    menu(box, { weekId, settings, plan, plans, missing: pastWeek ? pastWeek.missing : [] });
     return;
   }
   if (section === 'week') return sectionWeek(box, w, weekId, plan);
@@ -149,14 +157,16 @@ export async function render(box, params = {}) {
 function planLine(plan, settings) {
   const t = targetsFor(plan, settings);
   const w = t.weight ? t.weight.value : settings.goalWeight;
-  return `${w} кг · ${nutritionFor(plan, settings).kcal} ккал`;
+  return `${w} кг · ${nutritionFor(plan, settings, todayISO()).kcal} ккал`;
 }
 
 // Меню: входы плитками, второстепенное — строками с шевроном.
 // ---------------------------------------------------------------
-function menu(box, { weekId, settings, plan, plans }) {
+function menu(box, { weekId, settings, plan, plans, missing = [] }) {
+  // Подпись плитки называет, чего не хватает: «W44 · не закрыта: ккал, белок».
+  const weekSub = weekId + (missing.length ? ` · не закрыта: ${missing.join(', ')}` : '');
   const grid = el('div', { className: 'tiles' },
-    tile('week', 'Замеры недели', weekId, () => navigate('more', { section: 'week', week: weekId })),
+    tile('week', 'Замеры недели', weekSub, () => navigate('more', { section: 'week', week: weekId })),
     tile('goals', 'Цели и нормы', planLine(plan, settings),
       () => navigate('more', { section: 'goals' })),
     tile('guide', 'Справочник', 'техника и эталоны',
@@ -193,7 +203,22 @@ function menu(box, { weekId, settings, plan, plans }) {
 
 // ---------------------------------------------------------------
 function sectionWeek(box, w, weekId, plan) {
-  box.append(el('p', { className: 'hint', textContent: `Неделя ${weekId}` }));
+  // Стрелки недель (29.10): прошлую неделю закрывают в Пн–Вт, и добраться до неё
+  // было нечем, кроме адреса. Вперёд текущей недели листать незачем.
+  const shift = (n) => isoWeek(addDays(weekDays(weekId)[0], 7 * n));
+  const current = isoWeek(todayISO());
+  const days = weekDays(weekId);
+  box.append(el('div', { className: 'week-nav' },
+    el('button', {
+      className: 'step', textContent: '‹', title: 'прошлая неделя',
+      onclick: () => navigate('more', { section: 'week', week: shift(-1) }),
+    }),
+    el('span', { className: 'hint', textContent: `Неделя ${weekId} · ${dm(days[0])}–${dm(days[6])}` }),
+    el('button', {
+      className: 'step', textContent: '›', title: 'следующая неделя',
+      disabled: weekId >= current,
+      onclick: () => navigate('more', { section: 'week', week: shift(1) }),
+    })));
   // Состав — ЦИКЛ-4.md §8 (22.09): талия читается предохранителем +3 см,
   // шпагат и стойка — целями года, ккал и белок — воротами. Обхваты рук,
   // голени, груди, бёдер и шеи снимаются раз в квартал в `ЗАМЕРЫ.md`;
@@ -242,7 +267,8 @@ function sectionGoals(box, settings, plan) {
   // Ккал и белок цикла задаются планом, и поля тогда только показывают цифру:
   // правка, которая ни на что не влияет, хуже отсутствующего поля — именно так
   // ручные 2380 от Ц2 выглядели действующей нормой весь Ц3.
-  const n = nutritionFor(plan, settings);
+  // Ккал — недели, а не цикла: цифру следующей недели решает разбор (29.10).
+  const n = nutritionFor(plan, settings, todayISO());
   const sForm = el('div', { className: 'grid' },
     numField('целевой вес, кг', 'goalWeight', settings, '0.5'),
     n.fromPlan ? planField('ккал', n.kcal) : numField('ккал', 'goalKcal', settings, '10'),
@@ -253,8 +279,9 @@ function sectionGoals(box, settings, plan) {
   if (n.fromPlan) {
     box.append(el('p', {
       className: 'hint',
-      textContent: `Ккал и белок берутся из плана цикла: ${n.kcal} · Б${n.protein}`
-        + (n.fat != null ? ` Ж${n.fat} У${n.carbs}` : '') + '. Меняются пересборкой плана.',
+      textContent: `Ккал и белок этой недели — из плана цикла: ${n.kcal} · Б${n.protein}`
+        + (n.fat != null ? ` Ж${n.fat} У${n.carbs}` : '')
+        + '. Цифру следующей недели решает разбор недели, она приезжает с планом.',
     }));
   }
   const saveGoals = el('button', {
@@ -293,13 +320,18 @@ async function sectionGuide(box) {
 
 // ---------------------------------------------------------------
 async function sectionData(box, { settings, plan, plans, weekId }) {
+  // Файл готовится сейчас, чтобы касание сразу ушло в «Поделиться» (`backupSender`).
+  const sendBackup = backupSender();
   const bBackup = el('button', {
-    textContent: 'Бэкап .json',
+    textContent: 'Отправить бэкап',
     onclick: async () => {
-      const dump = await dumpAll();
-      download(`dnevnik-${todayISO()}.json`, JSON.stringify(dump, null, 1));
-      await putSettings({ ...settings, lastBackup: todayISO() });
-      flash(bBackup, 'Скачано');
+      try {
+        const how = await sendBackup();
+        if (how !== 'cancelled') settings.lastBackup = todayISO();
+        flash(bBackup, { shared: 'Отправлено', downloaded: 'Скачано', cancelled: 'Не отправлено' }[how]);
+      } catch (err) {
+        box.prepend(el('div', { className: 'error', textContent: 'Бэкап не отправлен: ' + err.message }));
+      }
     },
   });
 

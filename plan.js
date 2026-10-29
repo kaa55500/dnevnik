@@ -258,6 +258,18 @@ export function mevFor(plan, settings) {
   return (plan && plan.mev) || (settings && settings.mev) || {};
 }
 
+/** Счёт объёма цикла (`analytics.volumeCoef`): у плана без объявления — матрица. */
+export const volumeMethod = (plan) => (plan && plan.volume && plan.volume.method) || 'matrix';
+
+/** Подпись группы в этом цикле: приоритет меняется по циклам, ключ справочника — нет. */
+export const groupLabel = (plan, g) => (plan && plan.volume && plan.volume.labels && plan.volume.labels[g]) || g;
+
+/** Целевая доза группы ★★★ цикла или `null` (п. 17 очереди, решение 29.10). */
+export function volumeTarget(plan, g) {
+  const v = plan && plan.volume;
+  return v && v.target != null && (v.priority || []).includes(g) ? v.target : null;
+}
+
 /**
  * Норма питания: план цикла главный, настройка — запасной вариант.
  *
@@ -267,8 +279,8 @@ export function mevFor(plan, settings) {
  * в неделю мимо, ровно в фазе, где ккал единственный рычаг. Целевой вес
  * такую же развилку уже решает в пользу плана; здесь то же правило.
  */
-export function nutritionFor(plan, settings) {
-  const n = (plan && plan.nutrition) || {};
+export function nutritionFor(plan, settings, date = null) {
+  const n = { ...((plan && plan.nutrition) || {}), ...(weekNutrition(plan, date) || {}) };
   const s = settings || {};
   return {
     kcal: n.kcal != null ? n.kcal : s.goalKcal,
@@ -277,6 +289,24 @@ export function nutritionFor(plan, settings) {
     carbs: n.carbs,
     fromPlan: n.kcal != null,
   };
+}
+
+/**
+ * Ккал недели (решение атлета 29.10): `/разбор-недели` решает цифру следующей
+ * недели, и она правится в плане, а не в настройке. Неделя без решённой цифры
+ * наследует последнюю решённую — ворота §3 меняют ккал только по данным, так что
+ * «не решено» значит «как было», а не «как в шапке цикла». Ни одной решённой —
+ * цифра цикла. Неделя даты — последняя, что началась не позже неё.
+ */
+function weekNutrition(plan, date) {
+  if (!plan || !date || !Array.isArray(plan.weeks)) return null;
+  let found = null;
+  for (const w of plan.weeks) {
+    const first = (w.days || []).map((d) => d.date).sort()[0];
+    if (!first || first > date) break;
+    if (w.nutrition && w.nutrition.kcal != null) found = w.nutrition;
+  }
+  return found;
 }
 
 /**

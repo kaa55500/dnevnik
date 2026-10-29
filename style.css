@@ -529,10 +529,56 @@ ol.wk-sets li.warm { opacity: 0.5; }
 
 .ctl-toggle.on { background: var(--warn-soft); color: var(--warn); font-weight: 600; }
 
-.wk-actions:has(.ctl-toggle) { flex-wrap: wrap; }
-.wk-actions:has(.ctl-toggle) .warm-toggle,
-.wk-actions:has(.ctl-toggle) .ctl-toggle { flex: 1 1 0; }
-.wk-actions:has(.ctl-toggle) .wk-add { flex: 1 1 100%; }
+/* «До отказа» (29.10) — тот же тумблер; он стоит у всех силовых, поэтому
+   тумблеры почти всегда идут своей строкой, а запись — во всю ширину. */
+.fail-toggle {
+  flex: 0 0 auto;
+  padding: 0 16px;
+  min-height: 56px;
+  background: var(--card-2);
+  border: 0;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+
+.fail-toggle.on { background: var(--warn-soft); color: var(--warn); font-weight: 600; }
+
+.wk-actions:has(.ctl-toggle, .fail-toggle) { flex-wrap: wrap; }
+.wk-actions:has(.ctl-toggle, .fail-toggle) .warm-toggle,
+.wk-actions:has(.ctl-toggle, .fail-toggle) .ctl-toggle,
+.wk-actions:has(.ctl-toggle, .fail-toggle) .fail-toggle { flex: 1 1 0; }
+.wk-actions:has(.ctl-toggle, .fail-toggle) .wk-add { flex: 1 1 100%; }
+
+/* Чипы «план» и «прошлый» над формой: касание ставит вес и повторы.
+   Тем же чипом — выбор отдыха на контрольном лифте (29.10). */
+.wk-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
+.rest-feel { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 8px 0 4px; }
+.rest-feel-cap { font-size: var(--t-sm); color: var(--muted); }
+.rest-feel .chip.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.wk-chips .chip, .rest-feel .chip {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  font: 500 var(--t-sm) var(--mono);
+}
+
+/* Стрелки недель в «Замерах недели» (29.10). */
+.week-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 10px; }
+.week-nav .hint { margin: 0; text-align: center; }
+.week-nav .step:disabled { opacity: 0.3; }
+
+/* Сверка перед ЗАВЕРШИТЬ (29.10): строка упражнения, под ней причины касанием. */
+.finish-row { padding: 0 0 8px; border-bottom: 1px solid var(--line); }
+.finish-row:last-child { border-bottom: 0; }
+.finish-row .wk-chips { margin: 0 14px; }
+.skip-move:empty { display: none; }
+
+/* «+ ещё N таких» — под записью, во всю ширину: в «потом» это главный ход. */
+.wk-more { width: 100%; margin-top: 10px; }
 
 .wk-add {
   flex: 1;
@@ -1375,6 +1421,8 @@ ol.wk-sets li.editing { outline: 1px solid var(--accent); border-radius: 8px; }
   min-height: var(--tap);
 }
 .wk-add.editing { background: var(--warn); color: #000; }
+/* Лишний подход после закрытого плана — вторичным стилем (29.10). */
+.wk-add.extra { background: var(--card-2); color: var(--accent); }
 
 /* Заголовок текущей недели в выборе сессии. */
 h2.wk-now { color: var(--accent); }
