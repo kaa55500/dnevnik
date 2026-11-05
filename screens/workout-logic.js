@@ -590,6 +590,9 @@ export function moveExercise(workout, from, to) {
   const [presc] = workout.prescription.splice(from, 1);
   list.splice(to, 0, ex);
   workout.prescription.splice(to, 0, presc || {});
+  // Перетащенное помечается: в обзоре его строка светится жёлтой полоской
+  // (решение атлета 05.11) — видно, что порядок правился руками.
+  ex.moved = true;
   return true;
 }
 
@@ -664,10 +667,15 @@ export function snapshotOrder(workout) {
     prescription: [...(workout.prescription || [])],
     removed: workout.removed ? [...workout.removed] : undefined,
     plannedRPE: workout.plannedRPE,
+    moved: (workout.exercises || []).map((e) => e.moved),
   };
 }
 
 export function restoreOrder(workout, snap) {
+  snap.exercises.forEach((e, i) => {
+    if (snap.moved[i]) e.moved = true;
+    else delete e.moved;
+  });
   workout.exercises = snap.exercises;
   workout.prescription = snap.prescription;
   if (snap.removed === undefined) delete workout.removed;
@@ -680,9 +688,13 @@ export function restoreOrder(workout, snap) {
 // Сами pointer-события живут на экране; что из них следует — здесь, чтобы
 // проверяться без браузера. Порог свайпа уточняется на телефоне.
 
-/** Доля ширины строки, после которой свайп вправо убирает упражнение. */
-export const SWIPE_SHARE = 0.4;
-/** Смещение, меньше которого палец ещё не выбрал направление. */
+/**
+ * Ширина красной кнопки-корзины под строкой, px. Свайп влево открывает её,
+ * как в Telegram (решение атлета 05.11); убирает касание корзины, а не сам жест.
+ */
+export const TRASH_W = 76;
+
+/** Сдвиг пальца по одной оси, после которого жест выбран. */
 export const AXIS_SLOP = 8;
 
 /**
@@ -695,13 +707,17 @@ export function gestureAxis(dx, dy) {
 }
 
 /**
- * Чем кончился свайп по строке: `remove`, `blocked` (под упражнением есть
- * подходы — строка пружинит назад с их числом) или `cancel`.
+ * Чем кончился свайп по строке: `open` — корзина открыта, `close` — строка
+ * на месте, `blocked` — под упражнением есть подходы, корзины нет, строка
+ * пружинит назад с их числом. `open` — строка была открыта до касания.
+ * Корзина открывается, когда строка ушла влево больше чем на половину кнопки.
  */
-export function swipeVerdict({ axis, dx, width, sets }) {
-  if (axis !== 'x' || !(width > 0) || dx < width * SWIPE_SHARE) return { verdict: 'cancel' };
+export function swipeVerdict({ axis, dx, open = false, sets = 0 }) {
+  if (axis !== 'x') return { verdict: open ? 'open' : 'close' };
+  const at = (open ? -TRASH_W : 0) + dx;
+  if (at > -TRASH_W / 2) return { verdict: 'close' };
   if (sets > 0) return { verdict: 'blocked', sets };
-  return { verdict: 'remove' };
+  return { verdict: 'open' };
 }
 
 /**

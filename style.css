@@ -19,6 +19,9 @@
   --bad-soft: rgba(255, 69, 58, 0.16);
   --good: #30d158;
   --good-soft: rgba(48, 209, 88, 0.16);
+  /* Полоска «перетащено» в обзоре — пастельный жёлтый со свечением, как светодиод. */
+  --led: #ffe8a3;
+  --led-glow: rgba(255, 222, 130, 0.55);
 
   --sans: -apple-system, system-ui, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
@@ -1375,11 +1378,58 @@ ol.plan-list.overview .plan-row { cursor: default; }
    Вертикальный скролл остаётся браузеру, горизонталь и ручка — нам. */
 ol.plan-list.constructor .plan-row {
   grid-template-columns: 1fr auto auto;
+  position: relative;
+  z-index: 1;
   cursor: pointer;
   touch-action: pan-y;
   background: var(--card);
   transition: transform 0.15s ease-out;
 }
+
+/* Под строкой — красная корзина, как в Telegram: свайп влево её открывает. */
+ol.plan-list.constructor li.swipe-cell { position: relative; overflow: hidden; }
+.row-trash {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 76px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  background: var(--bad);
+  color: var(--ink);
+  border: 0;
+  font: 600 var(--t-xs) var(--sans);
+}
+.trash-ico {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Перетащенная строка: жёлтая полоска слева светится — порядок правился руками. */
+ol.plan-list.constructor li.moved .plan-row::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: var(--led);
+  box-shadow: 0 0 10px 2px var(--led-glow);
+}
+/* Сделанное в конструкторе приглушается содержимым, а не всей ячейкой:
+   иначе гасли бы и полоска «перетащено», и красная корзина. */
+ol.plan-list.constructor li.done { opacity: 1; }
+ol.plan-list.constructor li.done .plan-row > * { opacity: 0.5; }
 ol.plan-list.constructor .plan-row.dragging {
   position: relative;
   z-index: 2;
@@ -1421,18 +1471,30 @@ ol.plan-list.constructor .plan-row.dragging {
   min-height: var(--tap);
 }
 
-/* Убранное плановое — одна приглушённая строка внизу обзора. */
-.removed-strip {
-  display: block;
-  width: 100%;
-  background: none;
-  border: 0;
-  padding: 6px 14px;
-  text-align: left;
+/* Убранное плановое — сноской под списком обзора: имя и «вернуть». */
+.removed-note { margin: 2px 0 14px; padding: 0 14px; }
+.removed-cap {
+  padding: 4px 0;
   color: var(--muted);
   font-size: var(--t-xs);
+  letter-spacing: 0.02em;
 }
-.removed-list { margin-bottom: 14px; }
+.removed-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 8px 0;
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: var(--t-sm);
+  text-align: left;
+}
+.removed-go { color: var(--accent); font-weight: 600; font-size: var(--t-xs); }
 
 /* Вставка упражнения между строками плана — тонкая полоса, не кнопка-блок. */
 ol.plan-list li.plan-insert { border-top: 0; }
