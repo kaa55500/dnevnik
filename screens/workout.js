@@ -14,7 +14,8 @@ import {
   fillModeOf, restForSet, requiredPairs, workoutElapsed, cardioType,
   prescriptionFor, exerciseClosed, orderedSets, setProgress,
   bodyweightForm, restKind, setMeasure, markControl,
-  firstOpen, debtNames, exerciseHistory, doneName, isHoldSet, removeUnplanned, checkSetInput,
+  firstOpen, debtNames, exerciseHistory, doneName, isHoldSet, checkSetInput,
+  removeExercise, undoDelete, bonusToAppend, effectivePresc, insteadLine, listDose,
   repsPerSide, weightPerHand, fillChips, chipText, asksRPE, copiesOfLast, nextOpenAfter,
   REST_FEEL, SKIP_KINDS, skipAs, moveTargets, incomingMoves, insertMoved,
 } from './workout-logic.js';
@@ -591,6 +592,13 @@ function textEditor(box, ex, kind, presc) {
       state.textEdit = null;
       return draw(box);
     };
+    // Замена по ошибке снимается, пока под ней нет подходов: записанное — уже её факт.
+    if (ex.replacedWith && !(ex.sets || []).length) {
+      wrap.append(el('button', {
+        type: 'button', className: 'back', textContent: 'вернуть плановое',
+        onclick: () => replaceWith(null),
+      }));
+    }
     const subs = presc.subs || presc.alt || [];
     if (subs.length) {
       wrap.append(el('div', { className: 'wk-chips' }, ...subs.map((t) => el('button', {
@@ -774,7 +782,11 @@ async function draw(box) {
   // Обзор: до выбора режима — сам собой, дальше — по кнопке «к плану сессии».
   // Посмотреть весь план посреди тренировки нужно постоянно, а единственным
   // входом туда был чип режима, который заодно сбрасывал сам режим.
-  if (state.showOverview
+  // Всё убрано — тоже обзор: вернуть убранное можно только оттуда, а ветка
+  // «Пока пусто» ниже — для сессии вне плана, и её «отменить заполнение»
+  // удаляет запись целиком, закрытую тоже.
+  const allRemoved = !state.workout.exercises.length && (state.workout.removed || []).length > 0;
+  if (state.showOverview || allRemoved
       || (state.workout.fillMode == null && state.workout.status !== 'done')) {
     await drawOverview(box, screenCtx());
     return;
@@ -843,20 +855,25 @@ async function draw(box) {
     return;
   }
 
-  const presc = workout.prescription[index] || {};
+  // Строка плана слота: по ней считается «план закрыт», из неё форма замены
+  // берёт варианты. Доза того, что делается сейчас, — `presc` ниже.
+  const plan = workout.prescription[index] || {};
   const ex = workout.exercises[index];
   // Подходов набрано столько, сколько в плане — значит пора дальше,
   // и кнопка перехода это показывает.
   const workingSets = (ex.sets || []).filter((x) => !x.warmup).length;
-  const planned = Number(presc.sets) || 0;
-  const ready = !ex.skipped && exerciseClosed(ex, presc);
+  const planned = Number(plan.sets) || 0;
+  const ready = !ex.skipped && exerciseClosed(ex, plan);
   const last = index === total - 1;
   // История — того, что делается сейчас: у заменённого упражнения это замена.
   const history = await historyFor(doneName(ex), workout.id, workout.date,
     ex.replacedWith ? null : ex.variant);
   const prev = history.length ? history[history.length - 1] : null;
-  const guide = state.guide.get(ex.name);
-  // Модель тренажёра берётся из плана, а при замене — из справочника: скручивания
+  // Справочник — того, что делается: у замены свой эталон, тренажёр и мера.
+  const guide = state.guide.get(doneName(ex));
+  // У замены своя доза: из плана — только число подходов (`effectivePresc`).
+  const presc = effectivePresc(plan, ex, guide);
+  // Модель тренажёра — из строки плана, а без неё — из справочника: скручивания
   // делаются в Hoist, хотя план называет блок стоя.
   const machineModel = presc.machine
     || (guide && guide.machine ? guide.machine.model : null);
@@ -865,7 +882,8 @@ async function draw(box) {
   // «5×удержание 25–35 с» слипается в нечитаемое: множитель без пробелов
   // годится только для коротких числовых повторов вроде «4×5».
   const shortReps = /^[\d\s–—-]+$/.test(String(presc.reps ?? ''));
-  const planLine = `план ${presc.sets}${shortReps ? '×' : ' × '}${presc.reps}`
+  const planLine = presc.replaced ? insteadLine(presc)
+    : `план ${presc.sets}${shortReps ? '×' : ' × '}${presc.reps}`
     + (presc.rpe != null ? ` · RPE ${fmtNum(presc.rpe, 1)}` : '')
     + (presc.weight ? ` · ${presc.weight}` : '')
     // Плановый отдых виден до подхода, а не только таймером после него.
@@ -984,14 +1002,8 @@ async function draw(box) {
         className: 'plan-row',
         onclick: () => { state.showPlan = false; return goTo(box, i); },
       },
-      el('span', { className: 'plan-name', textContent: e.replacedWith || e.name }),
-      el('span', {
-        className: 'plan-dose',
-        textContent: (p.unplanned || e.unplanned) ? 'вне плана'
-          : `${p.sets}×${p.reps}`
-            + (p.rpe != null ? ` @${fmtNum(p.rpe, 1)}` : '')
-            + (p.weight ? ` · ${p.weight}` : ''),
-      }),
+      el('span', { className: 'plan-name', textContent: doneName(e) }),
+      el('span', { className: 'plan-dose', textContent: listDose(p, e) }),
       mark ? el('span', { className: 'plan-mark', textContent: mark }) : null));
       list.append(li);
     });
@@ -1104,10 +1116,10 @@ async function draw(box) {
     // Подход с удержанием (`holdSec` или `hold` в плане, ролик Ц4 и Ц5) — обе цифры сразу.
     const combined = isHoldSet(presc);
     const holds = workout.kind !== 'cardio' && (Boolean(guide && guide.sec) || combined);
-    // У замены строка плана чужая: плановые 54,4 кг тяги в жим гири не идут.
-    // У варианта снаряда доза плановая, а вес — нет: 13,6 кг кроссовера
-    // гантелям не подходят.
-    const own = ex.replacedWith ? {} : (ex.variant ? { ...presc, weight: null } : presc);
+    // У замены доза своя (`effectivePresc`): плановые 54,4 кг тяги в жим гири
+    // не идут. У варианта снаряда доза плановая, а вес — нет: 13,6 кг
+    // кроссовера гантелям не подходят.
+    const own = ex.variant && !ex.replacedWith ? { ...presc, weight: null } : presc;
     const d = editing || nextSetDefaults(own, ex.sets, history, { hold: holds });
     // Стопка в фунтах по номеру плиты (Hoist): вводится ячейка, в подход
     // пишутся ячейка и вес по шкале (решение атлета 29.10). Kraft и Хаммер
@@ -1121,7 +1133,7 @@ async function draw(box) {
     // не относится. Показываем по требованию — жилет и пояс никуда не делись.
     // Число в плане держит поле всегда: 24.09 становую пришлось вносить через
     // жилет, потому что в истории лежала гиперэкстензия без веса.
-    const bodyweight = !scale && bodyweightForm(presc, d, cardio);
+    const bodyweight = !scale && bodyweightForm(presc, d, cardio, history);
     // У кардио время и дистанция лежат в minutes/km, а не в weight/reps.
     // Правка забега открывалась с пустыми полями и сохраняла в них null —
     // время и километры стирались, а logCardioFromWorkout разносил нули в день.
@@ -1564,12 +1576,11 @@ async function draw(box) {
   for (let i = index + 1; i < workout.exercises.length && ahead.length < 3; i++) {
     const e = workout.exercises[i];
     const p = workout.prescription[i] || {};
-    const free = Boolean(p.unplanned || e.unplanned);
     if (exerciseClosed(e, p)) continue;
     ahead.push({
       i,
-      name: e.replacedWith || e.name,
-      dose: free ? 'вне плана' : `${p.sets}×${p.reps}`,
+      name: doneName(e),
+      dose: listDose(p, e, { short: true }),
     });
   }
   // Хвост попадает в очередь наравне с упражнениями: иначе блок 120 %
@@ -1640,7 +1651,7 @@ async function draw(box) {
   }
   box.append(addHere);
 
-  if (state.textEdit) box.append(textEditor(box, ex, state.textEdit, presc));
+  if (state.textEdit) box.append(textEditor(box, ex, state.textEdit, plan));
 
   box.append(el('div', { className: 'wk-nav' },
     el('button', {
@@ -1663,7 +1674,7 @@ async function draw(box) {
       // У бонуса причина всегда одна — «это доп», и спрашивать её — пустой
       // шаг (решение 23.09). На основных причину читает разбор план-факт.
       onclick: async () => {
-        if (presc.optional) {
+        if (plan.optional) {
           ex.skipped = true;
           ex.skipReason = 'доп';
           if (!(await save(box))) return;
@@ -1688,11 +1699,10 @@ async function draw(box) {
       className: 'back danger', textContent: 'убрать — добавлено по ошибке',
       onclick: async () => {
         if (!confirm(`Убрать «${ex.name}» из сессии?`)) return;
-        const gone = removeUnplanned(workout, state.index);
-        if (!gone) return;
+        const gone = removeExercise(workout, state.index);
+        if (!gone || gone.outcome !== 'deleted') return;
         if (!(await save(box))) {
-          workout.exercises.splice(gone.index, 0, gone.ex);
-          (workout.prescription || []).splice(gone.index, 0, gone.presc);
+          undoDelete(workout, gone);
           return;
         }
         return goTo(box, Math.max(0, Math.min(gone.index, workout.exercises.length - 1)));
@@ -1883,11 +1893,9 @@ export async function render(box, params = {}) {
     // против факта» становится ложью. Но у необязательных упражнений этой цены
     // нет: бонус стоит последним, индексы записанного не двигает и обязательной
     // часть сессии не делает. Появился в плане позже старта — дописываем,
-    // а не показываем тупик «не в этой сессии».
+    // а не показываем тупик «не в этой сессии». Убранный бонус не воскресает.
     if (own) {
-      const have = new Set(workout.exercises.map((e) => e.planName || e.name));
-      const missing = (own.session.exercises || [])
-        .filter((e) => e.optional && !have.has(e.name));
+      const missing = bonusToAppend(workout, own.session.exercises);
       if (missing.length) {
         workout.prescription = [...(workout.prescription || []), ...missing];
         workout.exercises = [...workout.exercises, ...missing.map((e) => ({

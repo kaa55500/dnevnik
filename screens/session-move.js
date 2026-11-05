@@ -9,6 +9,7 @@
 import { findWorkout, putWorkout, getPlan } from '../store.js';
 import { sessionFor } from '../plan.js';
 import { todayISO } from '../lib/dates.js';
+import { plannedRPEOf } from './workout-logic.js';
 
 /**
  * Объект тренировки без записи в базу. Открыть сессию посмотреть должно быть
@@ -25,9 +26,6 @@ export function makeWorkout(date, hit, moved = null) {
   // которой стоит единственный автоматический сигнал к пересборке (правило 4).
   // Бонус необязателен: включать его дозу в план значит занижать плановый RPE
   // в те дни, когда бонус не брали.
-  const rpes = session.exercises.flatMap((e) => (e.optional || e.rpe == null
-    ? []
-    : Array.from({ length: Number(e.sets) || 1 }, () => e.rpe)));
   const workout = {
     date,
     kind: session.kind,
@@ -42,12 +40,13 @@ export function makeWorkout(date, hit, moved = null) {
     // Дата плана сохраняется рядом с фактической: без неё сверка «план против
     // факта» теряет, что тренировка не пропущена, а перенесена.
     movedFrom: moved ? moved.date : null,
-    plannedRPE: rpes.length ? rpes.reduce((a, b) => a + b, 0) / rpes.length : null,
+    plannedRPE: plannedRPEOf(session.exercises),
     avgRPE: null,
     chestSignal: null,
     prescription: session.exercises,
-    exercises: session.exercises.map((e) => ({
-      name: e.name, planName: e.name, replacedWith: null,
+    // Плановое место — для возврата убранного упражнения после перестановок.
+    exercises: session.exercises.map((e, i) => ({
+      name: e.name, planName: e.name, replacedWith: null, planIndex: i,
       skipped: false, skipReason: null, note: '', sets: [],
     })),
   };

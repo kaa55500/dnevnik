@@ -1,4 +1,4 @@
-import { parseNum, fmtWeight } from '../lib/format.js';
+import { parseNum, fmtWeight, fmtNum, plural } from '../lib/format.js';
 
 /** Первое число из строки: '22 кг/рук' -> 22, 'вес тела' -> null. */
 export function firstNumber(s) {
@@ -44,12 +44,57 @@ export const isHoldSet = (presc) => presc.holdSec != null || presc.hold === true
  * Форма подписывала «вес на сторону» выпаду с весом тела, а 01.10 косые
  * записаны «20» при плане «10/ст» — цифра вдвое больше плановой единицы.
  * Повторы на сторону читаются из строки плана, вес на руку — из флага,
- * кроме веса тела и одного снаряда на двоих (гоблет).
+ * кроме веса тела и одного снаряда на двоих (гоблет). У замены строки плана
+ * нет — там смыслы разводит флаг справочника `repsSide`: повторы на сторону,
+ * и тогда не вес на руку.
  */
-export const repsPerSide = (presc) => /\/\s*(ст|ногу|сторону|руку)(?!\p{L})/u
-  .test(String((presc && presc.reps) ?? ''));
-export const weightPerHand = (presc) => Boolean(presc && presc.perSide)
+export const repsPerSide = (presc) => Boolean(presc && presc.repsSide)
+  || /\/\s*(ст|ногу|сторону|руку)(?!\p{L})/u.test(String((presc && presc.reps) ?? ''));
+export const weightPerHand = (presc) => Boolean(presc && presc.perSide) && !presc.repsSide
   && !/вес тела|гоблет/.test(String(presc.weight ?? ''));
+
+/**
+ * Доза текущего движения — то, что читает экран упражнения. Незаменённому —
+ * его плановая строка. Замене — только число подходов плана (оно закрывает
+ * слот в «план закрыт») и всё остальное из справочника по её имени: по 21
+ * замене в бэкапе 02.11 плановая доза почти никогда не подходила — «Присед
+ * на одной 2×5/ногу → со штангой» получал повторы «на ногу», «Становая 2×5 →
+ * сгибание ног» — вес становой, тренажёр Hoist — шкалу планового упражнения.
+ * Плановые повторы, вес, RPE, отдых и контроль к замене не переходят.
+ * Имя вне справочника получает поля по умолчанию: повторы и вес.
+ */
+export function effectivePresc(presc, ex, guide) {
+  const p = presc || {};
+  if (!ex || !ex.replacedWith) return p;
+  const g = guide || {};
+  const out = { name: ex.replacedWith, sets: p.sets, replaced: true, insteadOf: ex.name };
+  if (p.unplanned) out.unplanned = true;
+  if (g.perSide) out.perSide = true;
+  if (g.repsSide) out.repsSide = true;
+  if (g.machine && g.machine.model) out.machine = g.machine.model;
+  return out;
+}
+
+/** Строка плана замены: «вместо Становая: 2 подхода». */
+export function insteadLine(presc) {
+  const n = Number(presc.sets) || 0;
+  return `вместо ${presc.insteadOf}: ${n} ${plural(n, ['подход', 'подхода', 'подходов'])}`;
+}
+
+/**
+ * Доза строки в списках сессии — обзор, список плана на экране упражнения,
+ * очередь «дальше». Одна на все три: копии разошлись на первой же правке,
+ * и очередь печатала у замены плановую дозу становой (ревью 05.11, R9).
+ * `short` — очередь: только подходы и повторы.
+ */
+export function listDose(p, e, { short = false } = {}) {
+  if (p.unplanned || e.unplanned) return 'вне плана';
+  if (e.replacedWith) return insteadLine(effectivePresc(p, e));
+  if (short) return `${p.sets}×${p.reps}`;
+  return `${p.sets}×${p.reps}`
+    + (p.rpe != null ? ` @${fmtNum(p.rpe, 1)}` : '')
+    + (p.weight ? ` · ${p.weight}` : '');
+}
 
 /** Что сделано на деле: замена, если она есть, иначе плановое имя. */
 export const doneName = (ex) => ex.replacedWith || ex.name;
@@ -186,13 +231,13 @@ export function chipText(chip) {
  * техники; класс навыка план Ц4–Ц5 несёт в `zoneClass`. У Ц3 класса нет,
  * там действует прежнее правило: число RPE в плане.
  *
- * Внеплановое упражнение и контрольный подход спрашивают RPE всегда: доделанный
+ * Внеплановое, замена и контрольный подход спрашивают RPE всегда: доделанный
  * жим без класса записывался как навык, а 5ПМ при RPE 10 и при 8 — разные базы.
  * Кардио вместо RPE пишет пульс тем же полем.
  */
 export function asksRPE(presc, ex, kind) {
   if (kind === 'cardio') return true;
-  if (presc.control || presc.unplanned || (ex && ex.unplanned)) return true;
+  if (presc.control || presc.unplanned || presc.replaced || (ex && ex.unplanned)) return true;
   if (kind === 'skill' && !presc.zoneClass) return false;
   if (presc.zoneClass) return presc.zoneClass !== 'skill';
   return presc.rpe != null;
@@ -330,8 +375,12 @@ export function nextOpenAfter(workout, index) {
  * килограммов в строке нет, а штанга есть; подставляется при этом только
  * вес в килограммах (`planWeight`).
  */
-export function bodyweightForm(presc, defaults, cardio) {
+export function bodyweightForm(presc, defaults, cardio, history) {
   if (cardio || weightPerHand(presc)) return false;
+  // Замена и вставка без истории под своим именем — повторы и вес (R11):
+  // плана у них нет, и «Становая 145 → гиперэкстензия с блином» прятала
+  // поле веса за кнопку. Историю весом тела форма веса тела по-прежнему видит.
+  if ((presc.replaced || presc.unplanned) && !(history && history.length)) return false;
   return defaults.weight == null && firstNumber(presc.weight) == null;
 }
 
@@ -484,18 +533,193 @@ export function insertExercise(workout, index, name) {
   return at;
 }
 
+// ---------- Конструктор сессии: порядок и состав (решения атлета 05.11) ----------
+//
+// `exercises` и `prescription` связаны индексом (`prescriptionFor`), поэтому
+// двигаются только вместе и только здесь: экран эти функции лишь вызывает.
+
+const isPlanned = (ex, presc) => !ex.unplanned && !(presc && presc.unplanned);
+
 /**
- * Убирает упражнение, вставленное по ошибке (заметка атлета 18.10: обратная
- * бабочка «хочу удалить, но не могу» осталась пропуском в записи дня).
- * Только вне плана и только без подходов: плановое живёт с тренировкой, с
- * которой она стартовала, а записанное — факт. Возвращает убранное или null.
+ * Плановое место назначается лениво. У старых записей его нет; до первой
+ * правки конструктора порядок массива и есть плановый, поэтому индекс берётся
+ * из него. Плановое без места (бонус, дописанный при открытии) встаёт после
+ * последнего известного. Внеплановому место не нужно: вернуть его можно
+ * только отменой, на прежний индекс.
  */
-export function removeUnplanned(workout, index) {
+function ensurePlanIndex(workout) {
+  const list = workout.exercises || [];
+  let next = list.reduce((m, e) => (e.planIndex != null ? Math.max(m, e.planIndex + 1) : m), 0);
+  list.forEach((e, i) => {
+    if (e.planIndex == null && isPlanned(e, (workout.prescription || [])[i])) {
+      e.planIndex = next;
+      next += 1;
+    }
+  });
+}
+
+/**
+ * Плановый RPE сессии — среднее по плановым подходам, бонус и внеплановое
+ * не входят: так он считается при заведении сессии (`makeWorkout`), и только
+ * так его можно сравнивать с фактическим средним по подходам (правило 4).
+ */
+export function plannedRPEOf(rows) {
+  const rpes = (rows || []).flatMap((e) => (e.optional || e.unplanned || e.rpe == null
+    ? []
+    : Array.from({ length: Number(e.sets) || 1 }, () => e.rpe)));
+  return rpes.length ? rpes.reduce((a, b) => a + b, 0) / rpes.length : null;
+}
+
+/**
+ * Убранное плановое меняет план сессии, и плановый RPE обязан это видеть:
+ * иначе факт сравнивается с планом, где осталось несделанное по плану.
+ * Строка без RPE на среднее не влияет — тогда число не трогаем вовсе
+ * (у импортированных записей RPE в строках плана может не быть совсем).
+ */
+function replanRPE(workout, presc) {
+  if (presc && presc.rpe != null) workout.plannedRPE = plannedRPEOf(workout.prescription);
+}
+
+/** Перестановка: упражнение и его строка плана едут с `from` на `to` вместе. */
+export function moveExercise(workout, from, to) {
+  const list = workout.exercises || [];
+  if (from === to || !list[from] || to < 0 || to >= list.length) return false;
+  ensurePlanIndex(workout);
+  workout.prescription = workout.prescription || [];
+  const [ex] = list.splice(from, 1);
+  const [presc] = workout.prescription.splice(from, 1);
+  list.splice(to, 0, ex);
+  workout.prescription.splice(to, 0, presc || {});
+  return true;
+}
+
+/**
+ * Убрать упражнение из сессии. Три исхода:
+ * - `blocked` — под ним есть хоть один подход, включая разминочный: записанное —
+ *   факт, и одно движение пальца не должно молча вычесть работу из объёма;
+ * - `removed` — плановое уезжает в `workout.removed` целиком, с прочерком
+ *   и строкой плана. Прочерк — «план требовал, не сделал», долг; убранное —
+ *   «сегодня этого в плане нет», не долг. Отдельный список, а не флаг: флаг
+ *   пришлось бы отфильтровывать в каждом своде, и первый забытый фильтр дал бы
+ *   ложную цифру — по той же причине прочерк живёт в своих картах;
+ * - `deleted` — внеплановое удаляется насовсем (заметка атлета 18.10: обратная
+ *   бабочка «хочу удалить, но не могу»). Отмена — `undoDelete`.
+ */
+export function removeExercise(workout, index) {
   const ex = (workout.exercises || [])[index];
-  if (!ex || !ex.unplanned || (ex.sets || []).length) return null;
-  const [removed] = workout.exercises.splice(index, 1);
-  const [presc] = (workout.prescription || []).splice(index, 1);
-  return { ex: removed, presc, index };
+  if (!ex) return null;
+  const sets = (ex.sets || []).length;
+  if (sets) return { outcome: 'blocked', sets };
+  const presc = (workout.prescription || [])[index] || {};
+  if (!isPlanned(ex, presc)) {
+    workout.exercises.splice(index, 1);
+    (workout.prescription || []).splice(index, 1);
+    return { outcome: 'deleted', ex, presc, index };
+  }
+  ensurePlanIndex(workout);
+  workout.exercises.splice(index, 1);
+  (workout.prescription || []).splice(index, 1);
+  workout.removed = [...(workout.removed || []), { ex, presc }];
+  replanRPE(workout, presc);
+  return { outcome: 'removed', ex, presc, index };
+}
+
+/**
+ * Возврат убранного планового: сразу после последнего по списку, у кого
+ * плановое место меньше, а если таких нет — в начало (решение атлета 05.11).
+ * Без перестановки это его плановое место; после перестановки — за тем, после
+ * кого его видели: «перед первым с бо́льшим местом» ставило брусья над махами,
+ * поднятыми наверх.
+ */
+export function restoreRemoved(workout, ex) {
+  const k = (workout.removed || []).findIndex((r) => r.ex === ex);
+  if (k < 0) return null;
+  const [{ presc }] = workout.removed.splice(k, 1);
+  const list = workout.exercises;
+  let at = 0;
+  list.forEach((e, i) => { if (e.planIndex != null && e.planIndex < ex.planIndex) at = i + 1; });
+  list.splice(at, 0, ex);
+  workout.prescription = workout.prescription || [];
+  workout.prescription.splice(at, 0, presc);
+  replanRPE(workout, presc);
+  return at;
+}
+
+/** Отмена удаления внепланового: на прежний индекс. */
+export function undoDelete(workout, gone) {
+  const at = Math.min(gone.index, workout.exercises.length);
+  workout.exercises.splice(at, 0, gone.ex);
+  workout.prescription = workout.prescription || [];
+  workout.prescription.splice(at, 0, gone.presc);
+  return at;
+}
+
+/**
+ * Снимок порядка и состава до правки: сохранение не прошло — запись и экран
+ * возвращаются к нему целиком, а не к тому, что успела поменять правка.
+ */
+export function snapshotOrder(workout) {
+  return {
+    exercises: [...(workout.exercises || [])],
+    prescription: [...(workout.prescription || [])],
+    removed: workout.removed ? [...workout.removed] : undefined,
+    plannedRPE: workout.plannedRPE,
+  };
+}
+
+export function restoreOrder(workout, snap) {
+  workout.exercises = snap.exercises;
+  workout.prescription = snap.prescription;
+  if (snap.removed === undefined) delete workout.removed;
+  else workout.removed = snap.removed;
+  workout.plannedRPE = snap.plannedRPE;
+}
+
+// ---------- Жесты обзора: решения чистыми функциями ----------
+//
+// Сами pointer-события живут на экране; что из них следует — здесь, чтобы
+// проверяться без браузера. Порог свайпа уточняется на телефоне.
+
+/** Доля ширины строки, после которой свайп вправо убирает упражнение. */
+export const SWIPE_SHARE = 0.4;
+/** Смещение, меньше которого палец ещё не выбрал направление. */
+export const AXIS_SLOP = 8;
+
+/**
+ * Направление жеста по первому заметному смещению: `x`, `y` или `null`.
+ * Вертикаль, выбранная первой, — скролл браузера до конца касания.
+ */
+export function gestureAxis(dx, dy) {
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < AXIS_SLOP) return null;
+  return Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+}
+
+/**
+ * Чем кончился свайп по строке: `remove`, `blocked` (под упражнением есть
+ * подходы — строка пружинит назад с их числом) или `cancel`.
+ */
+export function swipeVerdict({ axis, dx, width, sets }) {
+  if (axis !== 'x' || !(width > 0) || dx < width * SWIPE_SHARE) return { verdict: 'cancel' };
+  if (sets > 0) return { verdict: 'blocked', sets };
+  return { verdict: 'remove' };
+}
+
+/**
+ * Куда встаёт перетаскиваемая строка: число остальных строк, чья середина
+ * выше указателя. Это индекс для `moveExercise(from, to)`.
+ */
+export function dropIndex(rects, from, y) {
+  return rects.reduce((n, r, i) => (i !== from && y > r.top + r.height / 2 ? n + 1 : n), 0);
+}
+
+/**
+ * Бонус, появившийся в плане позже старта сессии, дописывается при открытии.
+ * Убранный бонус уже «имеется»: иначе он воскресал бы при каждом открытии.
+ */
+export function bonusToAppend(workout, planned) {
+  const have = new Set([...(workout.exercises || []), ...(workout.removed || []).map((r) => r.ex)]
+    .map((e) => e.planName || e.name));
+  return (planned || []).filter((e) => e.optional && !have.has(e.name));
 }
 
 /**

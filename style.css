@@ -728,9 +728,12 @@ ol.plan-list li + li { border-top: 1px solid var(--line); }
   min-height: var(--tap);
 }
 
-.plan-name { font-size: var(--t-sm); font-weight: 600; }
+/* Столбцы — явно: элемент с одной лишь строкой (`grid-row`) сетка ставит первым,
+   и отметка «2 из 2» занимала столбец имени, а доза жалась под ней в узкую колонку
+   (снимок обзора 05.11 на бэкапе). */
+.plan-name { grid-column: 1; font-size: var(--t-sm); font-weight: 600; }
 .plan-dose { grid-column: 1; font: 500 var(--t-xs) var(--mono); color: var(--muted); }
-.plan-mark { grid-row: 1 / 3; align-self: center; font: 600 var(--t-xs) var(--mono); color: var(--good); }
+.plan-mark { grid-column: 2; grid-row: 1 / 3; align-self: center; font: 600 var(--t-xs) var(--mono); color: var(--good); }
 ol.plan-list li.now { background: var(--accent-soft); }
 ol.plan-list li.now .plan-name { color: var(--accent); }
 ol.plan-list li.done { opacity: 0.5; }
@@ -1367,6 +1370,69 @@ ol.stretch .etalon { margin: 0 14px 14px 34px; }
 
 /* Обзор перед выбором режима: план читается, но не тапается. */
 ol.plan-list.overview .plan-row { cursor: default; }
+
+/* Конструктор сессии: строка тянется вправо свайпом, ручка ≡ — перетаскивание.
+   Вертикальный скролл остаётся браузеру, горизонталь и ручка — нам. */
+ol.plan-list.constructor .plan-row {
+  grid-template-columns: 1fr auto auto;
+  cursor: pointer;
+  touch-action: pan-y;
+  background: var(--card);
+  transition: transform 0.15s ease-out;
+}
+ol.plan-list.constructor .plan-row.dragging {
+  position: relative;
+  z-index: 2;
+  transition: none;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+.plan-handle {
+  grid-column: 3;
+  grid-row: 1 / 3;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding: 0 4px 0 10px;
+  color: var(--muted);
+  font-size: var(--t-lg);
+  touch-action: none;
+}
+.plan-add { margin: -6px 0 10px; }
+
+/* Плашка «Убрано: X · вернуть» — 5 с под списком. */
+.undo-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 10px;
+  padding: 10px 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: var(--t-sm);
+}
+.undo-go {
+  background: none;
+  border: 0;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: var(--t-sm);
+  min-height: var(--tap);
+}
+
+/* Убранное плановое — одна приглушённая строка внизу обзора. */
+.removed-strip {
+  display: block;
+  width: 100%;
+  background: none;
+  border: 0;
+  padding: 6px 14px;
+  text-align: left;
+  color: var(--muted);
+  font-size: var(--t-xs);
+}
+.removed-list { margin-bottom: 14px; }
 
 /* Вставка упражнения между строками плана — тонкая полоса, не кнопка-блок. */
 ol.plan-list li.plan-insert { border-top: 0; }

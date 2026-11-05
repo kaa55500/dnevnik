@@ -30,6 +30,9 @@ export const SEND_DAYS = 6;
  * Дата копии ставится по разрешённому промису отправки, а не по нажатию:
  * закрытый лист «Поделиться» — это не копия, а прежняя кнопка отмечала бэкап
  * сделанным в любом случае.
+ *
+ * `send.ready` — промис готовности файла: после него касание гарантированно
+ * уходит в «Поделиться» без ожидания. Экраны его не ждут, его ждёт тест.
  */
 export function backupSender() {
   let ready = null;
@@ -38,7 +41,7 @@ export function backupSender() {
   });
   // Ошибка чтения базы всплывёт в касании, а не необработанным отказом сейчас.
   preparing.catch(() => {});
-  return async function send() {
+  async function send() {
     // База ещё читается — касание, возможно, потеряно; тогда файл скачается.
     if (!ready) await preparing;
     const how = await shareFile(ready.name, ready.text);
@@ -46,7 +49,9 @@ export function backupSender() {
     const settings = await getSettings();
     await putSettings({ ...settings, lastBackup: todayISO() });
     return how;
-  };
+  }
+  send.ready = preparing;
+  return send;
 }
 
 /** Разовая отправка: готовит файл и сразу шлёт. В касании — `backupSender`. */

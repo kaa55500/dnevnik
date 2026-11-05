@@ -9,10 +9,15 @@ import {
 } from '../store.js';
 import { sessionFor } from '../plan.js';
 import { weekdayShort, isoWeek, dm } from '../lib/dates.js';
-import { fmtNum } from '../lib/format.js';
-import { insertExercise } from './workout-logic.js';
+import {
+  insertExercise, listDose, doneName, moveExercise, removeExercise,
+  restoreRemoved, undoDelete, snapshotOrder, restoreOrder, gestureAxis, swipeVerdict, dropIndex,
+} from './workout-logic.js';
 import { applyMove, swapSessions } from './session-move.js';
 import { navigate } from '../main.js';
+
+/** Сколько живёт плашка «Убрано: X · вернуть». */
+const UNDO_MS = 5000;
 
 function el(tag, props = {}, ...kids) {
   const n = document.createElement(tag);
@@ -47,40 +52,222 @@ export async function drawOverview(box, ctx) {
   // Начатая сессия открывается отсюда прыжком на нужное упражнение: вернуться
   // дописать забытое значило пролистать стрелкой весь день. До выбора режима
   // прыгать некуда — там это просто список.
-  const jumpable = Boolean(workout.fillMode);
-  const list = el('ol', { className: 'plan-list overview' });
+  //
+  // Тот же список — конструктор сессии (решения атлета 05.11): порядок в зале
+  // часто расходится с планом, и запись должна показывать, что и в каком
+  // порядке сделано. Строка перетаскивается за ручку ≡, свайп вправо убирает
+  // упражнение без подходов. Работает, когда запись заведена: после выбора
+  // режима, а у закрытой тренировки — всегда. До выбора режима план смотрят
+  // бесплатно, и правка создала бы запись побочно.
+  const built = Boolean(workout.fillMode) || workout.status === 'done';
+  // Всё убрано: упражнений нет, и вести «к заполнению» некуда — экран
+  // «Пока пусто» строки «убрано» не знает. Обзор остаётся экраном сессии,
+  // а список убранного открыт сразу.
+  const allRemoved = !workout.exercises.length && (workout.removed || []).length > 0;
+
+  // Перед уходом с обзора плашка снимается: она про этот экран.
+  const leave = () => {
+    clearTimeout(state.undoTimer);
+    state.undoBar = null;
+    state.undoTimer = null;
+  };
+
+  // Правка с откатом: не сохранилось — запись возвращается к снимку, экран
+  // не перерисовывается и показывает прежний порядок рядом с ошибкой `save`.
+  const commit = async (change) => {
+    const snap = snapshotOrder(workout);
+    const cur = workout.exercises[state.index];
+    change();
+    if (!(await save(box))) {
+      restoreOrder(workout, snap);
+      return false;
+    }
+    // Открытое упражнение остаётся тем же, на каком бы месте оно ни оказалось.
+    const at = workout.exercises.indexOf(cur);
+    state.index = at >= 0 ? at : Math.max(0, Math.min(state.index, workout.exercises.length - 1));
+    return true;
+  };
+
+  // Плашка одна на экран: новая заменяет прежнюю и живёт свои 5 с.
+  const showBar = (text, undo) => {
+    clearTimeout(state.undoTimer);
+    state.undoBar = { text, undo };
+    state.undoTimer = setTimeout(() => {
+      state.undoBar = null;
+      state.undoTimer = null;
+      const bar = box.querySelector('.undo-bar');
+      if (bar) bar.remove();
+    }, UNDO_MS);
+  };
+
+  const rowEls = [];
+  let drag = null;
+
+  // Свайп вправо по строке. Вертикаль, выбранная первой, — скролл браузера
+  // (`touch-action: pan-y`), строка его не трогает. Сдвинутое касание
+  // переходом к упражнению не кончается.
+  const wireSwipe = (row, i) => {
+    let g = null;
+    row.addEventListener('pointerdown', (e) => {
+      row.moved = false;
+      if (drag) return;
+      g = { x: e.clientX, y: e.clientY, axis: null };
+    });
+    row.addEventListener('pointermove', (e) => {
+      if (!g || drag) return;
+      const dx = e.clientX - g.x;
+      if (!g.axis) g.axis = gestureAxis(dx, e.clientY - g.y);
+      if (g.axis) row.moved = true;
+      if (g.axis === 'x') row.style.transform = `translateX(${Math.max(0, dx)}px)`;
+    });
+    const end = async (e, cancelled) => {
+      if (!g || drag) return;
+      const cur = g;
+      g = null;
+      row.style.transform = '';
+      if (cancelled) return;
+      const ex = workout.exercises[i];
+      const { verdict, sets } = swipeVerdict({
+        axis: cur.axis,
+        dx: e.clientX - cur.x,
+        width: row.getBoundingClientRect().width,
+        sets: (ex.sets || []).length,
+      });
+      if (verdict === 'blocked') {
+        showBar(`сначала сотри подходы: ${sets}`, null);
+        await draw(box);
+        return;
+      }
+      if (verdict !== 'remove') return;
+      let gone = null;
+      if (!(await commit(() => { gone = removeExercise(workout, i); }))) return;
+      // Плановое возвращается на своё плановое место, внеплановое — на прежнее.
+      showBar(`Убрано: ${doneName(gone.ex)}`, () => (gone.outcome === 'removed'
+        ? restoreRemoved(workout, gone.ex)
+        : undoDelete(workout, gone)));
+      await draw(box);
+    };
+    row.addEventListener('pointerup', (e) => end(e, false));
+    row.addEventListener('pointercancel', (e) => end(e, true));
+  };
+
+  // Перетаскивание за ручку: место сброса — по серединам строк, снятым
+  // в момент касания.
+  const wireDrag = (handle, row, i) => {
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.stopPropagation) e.stopPropagation();
+      handle.setPointerCapture(e.pointerId);
+      drag = { from: i, y: e.clientY, rects: rowEls.map((r) => r.getBoundingClientRect()) };
+      row.classList.add('dragging');
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if (drag) row.style.transform = `translateY(${e.clientY - drag.y}px)`;
+    });
+    const end = async (e, cancelled) => {
+      if (!drag) return;
+      const d = drag;
+      drag = null;
+      handle.releasePointerCapture(e.pointerId);
+      row.moved = true;
+      row.classList.remove('dragging');
+      row.style.transform = '';
+      if (cancelled) return;
+      const to = dropIndex(d.rects, d.from, e.clientY);
+      if (to === d.from) return;
+      if (await commit(() => { moveExercise(workout, d.from, to); })) await draw(box);
+    };
+    handle.addEventListener('pointerup', (e) => end(e, false));
+    handle.addEventListener('pointercancel', (e) => end(e, true));
+  };
+
+  const list = el('ol', { className: built ? 'plan-list overview constructor' : 'plan-list overview' });
   workout.exercises.forEach((e, i) => {
     const p = workout.prescription[i] || {};
     const sets = (e.sets || []).filter((x) => !x.warmup).length;
     const dose = el('span', {
       className: 'plan-dose',
-      textContent: (p.unplanned || e.unplanned) ? 'вне плана'
-        : `${p.sets}×${p.reps}`
-          + (p.rpe != null ? ` @${fmtNum(p.rpe, 1)}` : '')
-          + (p.weight ? ` · ${p.weight}` : ''),
+      textContent: listDose(p, e),
     });
-    const name = el('span', { className: 'plan-name', textContent: e.replacedWith || e.name });
+    const name = el('span', { className: 'plan-name', textContent: doneName(e) });
     const mark = e.skipped ? 'пропуск' : (sets ? `${sets} из ${p.sets || '—'}` : '');
-    const row = jumpable
-      ? el('button', {
-        className: 'plan-row',
-        onclick: () => { state.showOverview = false; return goTo(box, i); },
-      }, name, dose, mark ? el('span', { className: 'plan-mark', textContent: mark }) : null)
-      : el('div', { className: 'plan-row' }, name, dose);
+    if (!built) {
+      list.append(el('li', { className: sets || e.skipped ? 'done' : '' },
+        el('div', { className: 'plan-row' }, name, dose)));
+      return;
+    }
+    const handle = el('span', { className: 'plan-handle', textContent: '≡' });
+    const row = el('button', {
+      className: 'plan-row',
+      onclick: () => {
+        if (row.moved) { row.moved = false; return null; }
+        leave();
+        state.showOverview = false;
+        return goTo(box, i);
+      },
+    }, name, dose, mark ? el('span', { className: 'plan-mark', textContent: mark }) : null, handle);
+    rowEls.push(row);
+    wireSwipe(row, i);
+    wireDrag(handle, row, i);
     list.append(el('li', { className: sets || e.skipped ? 'done' : '' }, row));
   });
   box.append(list);
+
+  if (state.undoBar) {
+    const { text, undo } = state.undoBar;
+    box.append(el('div', { className: 'undo-bar' },
+      el('span', { textContent: text }),
+      undo ? el('button', {
+        className: 'undo-go', textContent: 'вернуть',
+        onclick: async () => {
+          if (!(await commit(undo))) return;
+          leave();
+          await draw(box);
+        },
+      }) : null));
+  }
+
+  if (built) {
+    // Новое встаёт в конец, место задаётся перетаскиванием.
+    box.append(el('button', {
+      className: 'insert-here plan-add', textContent: '+ упражнение',
+      onclick: () => { state.insertAt = workout.exercises.length; return draw(box); },
+    }));
+    if (state.insertAt != null) box.append(exercisePicker(box, ctx));
+
+    // Убранное плановое видно только здесь — одной приглушённой строкой.
+    const removed = workout.removed || [];
+    if (removed.length) {
+      box.append(el('button', {
+        className: 'removed-strip', textContent: `убрано: ${removed.length} ›`,
+        onclick: () => { state.showRemoved = !state.showRemoved; return draw(box); },
+      }));
+      if (state.showRemoved || allRemoved) {
+        const card = el('div', { className: 'group-card removed-list' });
+        for (const r of removed) {
+          card.append(el('button', {
+            className: 'group-row',
+            onclick: async () => {
+              if (await commit(() => { restoreRemoved(workout, r.ex); })) await draw(box);
+            },
+          },
+          el('span', { className: 'row-title', textContent: doneName(r.ex) }),
+          el('span', { className: 'row-value', textContent: 'вернуть' })));
+        }
+        box.append(card);
+      }
+    }
+  }
 
   if (state.stretch) {
     box.append(el('p', { className: 'hint', textContent:
       `Хвостом сессии — растяжка, ${state.stretch.positions.length} позиций.` }));
   }
 
-  if (workout.fillMode) {
+  if (workout.fillMode && !allRemoved) {
     box.append(el('button', {
       className: 'go',
       textContent: 'продолжить заполнение →',
-      onclick: () => { state.showOverview = false; return draw(box); },
+      onclick: () => { leave(); state.showOverview = false; return draw(box); },
     }));
   }
 
