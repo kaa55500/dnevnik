@@ -19,9 +19,9 @@
   --bad-soft: rgba(255, 69, 58, 0.16);
   --good: #30d158;
   --good-soft: rgba(48, 209, 88, 0.16);
-  /* Полоска «перетащено» в обзоре — пастельный жёлтый со свечением, как светодиод. */
-  --led: #ffe8a3;
-  --led-glow: rgba(255, 222, 130, 0.35);
+  /* Контур «перетащено» в обзоре — приглушённый пастельный жёлтый с мягким свечением. */
+  --led: rgba(255, 232, 163, 0.45);
+  --led-glow: rgba(255, 222, 130, 0.16);
 
   --sans: -apple-system, system-ui, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
@@ -1421,10 +1421,18 @@ li.swipe-cell.reveal:not(.drag-cell) .row-trash { visibility: visible; }
   stroke-linejoin: round;
 }
 
-/* Перетащенная строка: тонкий пастельно-жёлтый контур со свечением внутрь —
-   порядок правился руками. Гаснет, когда строка снова на плановом месте. */
-ol.plan-list.constructor li.moved .plan-row {
-  box-shadow: inset 0 0 0 1px var(--led), inset 0 0 8px var(--led-glow);
+/* Перетащенная строка: тонкий приглушённый пастельно-жёлтый контур со скруглёнными
+   углами и мягким свечением — порядок правился руками. Гаснет, когда строка снова
+   на плановом месте. Рамка — отдельным слоем с отступом: тень самой строки
+   скругляться не умеет, строка прямоугольная. */
+ol.plan-list.constructor li.moved .plan-row::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border: 1px solid var(--led);
+  border-radius: 10px;
+  box-shadow: 0 0 6px var(--led-glow), inset 0 0 6px var(--led-glow);
+  pointer-events: none;
 }
 /* Сделанное в конструкторе приглушается содержимым, а не всей ячейкой:
    иначе гасли бы и полоска «перетащено», и красная корзина. */
