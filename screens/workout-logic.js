@@ -593,7 +593,23 @@ export function moveExercise(workout, from, to) {
   // Перетащенное помечается: в обзоре его строка светится жёлтой полоской
   // (решение атлета 05.11) — видно, что порядок правился руками.
   ex.moved = true;
+  settleMoved(workout);
   return true;
+}
+
+/**
+ * Полоска гаснет, когда перетащенное вернулось на своё место (решение атлета
+ * 05.11): соседи сверху и снизу среди плановых, что сейчас в списке, — те же,
+ * что в плане. Внеплановое планового места не имеет, его полоска остаётся.
+ */
+export function settleMoved(workout) {
+  const planned = (workout.exercises || []).filter((e) => e.planIndex != null);
+  const byPlan = [...planned].sort((a, b) => a.planIndex - b.planIndex);
+  planned.forEach((e, i) => {
+    if (!e.moved) return;
+    const k = byPlan.indexOf(e);
+    if (planned[i - 1] === byPlan[k - 1] && planned[i + 1] === byPlan[k + 1]) delete e.moved;
+  });
 }
 
 /**
@@ -624,6 +640,7 @@ export function removeExercise(workout, index) {
   (workout.prescription || []).splice(index, 1);
   workout.removed = [...(workout.removed || []), { ex, presc }];
   replanRPE(workout, presc);
+  settleMoved(workout);
   return { outcome: 'removed', ex, presc, index };
 }
 
@@ -645,6 +662,7 @@ export function restoreRemoved(workout, ex) {
   workout.prescription = workout.prescription || [];
   workout.prescription.splice(at, 0, presc);
   replanRPE(workout, presc);
+  settleMoved(workout);
   return at;
 }
 

@@ -274,22 +274,30 @@ export async function drawOverview(box, ctx) {
     }));
     if (state.insertAt != null) box.append(exercisePicker(box, ctx));
 
-    // Убранное плановое — сноской под списком, всегда на виду (решение атлета
-    // 05.11): имя и «вернуть» в одно касание. Внеплановое удаляется насовсем
-    // и сюда не попадает — вернуть его можно только плашкой.
+    // Убранное плановое — сноской под списком (решения атлета 05.11): свёрнута
+    // в «убрано · N ›», касание раскрывает имена с «вернуть». Когда убрано всё,
+    // раскрыта сразу — возвращать больше неоткуда. Внеплановое удаляется
+    // насовсем и сюда не попадает — вернуть его можно только плашкой.
     const removed = workout.removed || [];
     if (removed.length) {
+      const open = state.showRemoved || allRemoved;
       const note = el('div', { className: 'removed-note' },
-        el('div', { className: 'removed-cap', textContent: `убрано · ${removed.length}` }));
-      for (const r of removed) {
-        note.append(el('button', {
-          className: 'removed-row',
-          onclick: async () => {
-            if (await commit(() => { restoreRemoved(workout, r.ex); })) await draw(box);
+        el('button', {
+          className: 'removed-cap', type: 'button',
+          textContent: `убрано · ${removed.length} ${open ? '⌄' : '›'}`,
+          onclick: () => { state.showRemoved = !state.showRemoved; return draw(box); },
+        }));
+      if (open) {
+        for (const r of removed) {
+          note.append(el('button', {
+            className: 'removed-row',
+            onclick: async () => {
+              if (await commit(() => { restoreRemoved(workout, r.ex); })) await draw(box);
+            },
           },
-        },
-        el('span', { className: 'removed-name', textContent: doneName(r.ex) }),
-        el('span', { className: 'removed-go', textContent: 'вернуть' })));
+          el('span', { className: 'removed-name', textContent: doneName(r.ex) }),
+          el('span', { className: 'removed-go', textContent: 'вернуть' })));
+        }
       }
       box.append(note);
     }

@@ -1474,7 +1474,13 @@ ol.plan-list.constructor .plan-row.dragging {
 /* Убранное плановое — сноской под списком обзора: имя и «вернуть». */
 .removed-note { margin: 2px 0 14px; padding: 0 14px; }
 .removed-cap {
+  display: block;
+  width: 100%;
+  min-height: 36px;
   padding: 4px 0;
+  background: none;
+  border: 0;
+  text-align: left;
   color: var(--muted);
   font-size: var(--t-xs);
   letter-spacing: 0.02em;
