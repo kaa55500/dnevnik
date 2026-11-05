@@ -21,7 +21,7 @@
   --good-soft: rgba(48, 209, 88, 0.16);
   /* Полоска «перетащено» в обзоре — пастельный жёлтый со свечением, как светодиод. */
   --led: #ffe8a3;
-  --led-glow: rgba(255, 222, 130, 0.55);
+  --led-glow: rgba(255, 222, 130, 0.35);
 
   --sans: -apple-system, system-ui, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
@@ -1386,27 +1386,34 @@ ol.plan-list.constructor .plan-row {
   transition: transform 0.15s ease-out;
 }
 
-/* Под строкой — красная корзина, как в Telegram: свайп влево её открывает. */
+/* Под строкой — красная корзина-капсула, как в Telegram: свайп влево её открывает.
+   Видна, только пока строка сдвинута (`reveal`); при перетаскивании ячейка
+   не обрезает строку (`drag-cell`), а корзина под ней скрыта. */
 ol.plan-list.constructor li.swipe-cell { position: relative; overflow: hidden; }
+ol.plan-list.constructor li.swipe-cell.drag-cell { overflow: visible; }
 .row-trash {
   position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 76px;
+  top: 50%;
+  right: 6px;
+  width: 64px;
+  height: 56px;
+  transform: translateY(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 2px;
   background: var(--bad);
   color: var(--ink);
   border: 0;
-  font: 600 var(--t-xs) var(--sans);
+  border-radius: 28px;
+  font: 600 11px var(--sans);
+  visibility: hidden;
 }
+li.swipe-cell.reveal:not(.drag-cell) .row-trash { visibility: visible; }
 .trash-ico {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
@@ -1414,17 +1421,10 @@ ol.plan-list.constructor li.swipe-cell { position: relative; overflow: hidden; }
   stroke-linejoin: round;
 }
 
-/* Перетащенная строка: жёлтая полоска слева светится — порядок правился руками. */
-ol.plan-list.constructor li.moved .plan-row::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 4px;
-  border-radius: 0 4px 4px 0;
-  background: var(--led);
-  box-shadow: 0 0 10px 2px var(--led-glow);
+/* Перетащенная строка: тонкий пастельно-жёлтый контур со свечением внутрь —
+   порядок правился руками. Гаснет, когда строка снова на плановом месте. */
+ol.plan-list.constructor li.moved .plan-row {
+  box-shadow: inset 0 0 0 1px var(--led), inset 0 0 8px var(--led-glow);
 }
 /* Сделанное в конструкторе приглушается содержимым, а не всей ячейкой:
    иначе гасли бы и полоска «перетащено», и красная корзина. */

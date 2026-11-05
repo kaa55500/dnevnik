@@ -12,7 +12,7 @@ import { weekdayShort, isoWeek, dm } from '../lib/dates.js';
 import {
   insertExercise, listDose, doneName, moveExercise, removeExercise,
   restoreRemoved, undoDelete, snapshotOrder, restoreOrder, gestureAxis, swipeVerdict, dropIndex,
-  TRASH_W,
+  TRASH_W, settleMoved,
 } from './workout-logic.js';
 import { applyMove, swapSessions } from './session-move.js';
 import { navigate } from '../main.js';
@@ -78,6 +78,10 @@ export async function drawOverview(box, ctx) {
   // «Пока пусто» строки «убрано» не знает. Обзор остаётся экраном сессии,
   // а сноска с убранным и так внизу.
   const allRemoved = !workout.exercises.length && (workout.removed || []).length > 0;
+  // Отметки «перетащено» сверяются с планом при каждом показе: запись могла
+  // пережить версию, где возврат на место отметку не снимал. В базу уйдёт
+  // со следующей правкой.
+  settleMoved(workout);
 
   // Перед уходом с обзора плашка снимается: она про этот экран.
   const leave = () => {
@@ -121,7 +125,14 @@ export async function drawOverview(box, ctx) {
   // (решение атлета 05.11); убирает касание корзины. Открыта одна строка
   // за раз. Вертикаль, выбранная первой, — скролл браузера (`touch-action:
   // pan-y`), строка его не трогает. Сдвинутое касание переходом не кончается.
-  const setOffset = (row, x) => { row.style.transform = x ? `translateX(${x}px)` : ''; };
+  // Корзина видна, только пока строка сдвинута: иначе она просвечивала бы
+  // из-под строки при перетаскивании и по скруглённым краям.
+  const setOffset = (row, x) => {
+    row.style.transform = x ? `translateX(${x}px)` : '';
+    clearTimeout(row.hideBin);
+    if (x) row.cell.classList.add('reveal');
+    else row.hideBin = setTimeout(() => row.cell.classList.remove('reveal'), 160);
+  };
   const closeOpen = () => {
     const open = rowEls.find((r) => r.ex === state.openRow);
     state.openRow = null;
@@ -190,6 +201,7 @@ export async function drawOverview(box, ctx) {
       handle.setPointerCapture(e.pointerId);
       drag = { from: i, y: e.clientY, rects: rowEls.map((r) => r.getBoundingClientRect()) };
       row.classList.add('dragging');
+      row.cell.classList.add('drag-cell');
     });
     handle.addEventListener('pointermove', (e) => {
       if (drag) row.style.transform = `translateY(${e.clientY - drag.y}px)`;
@@ -201,6 +213,7 @@ export async function drawOverview(box, ctx) {
       handle.releasePointerCapture(e.pointerId);
       row.moved = true;
       row.classList.remove('dragging');
+      row.cell.classList.remove('drag-cell');
       row.style.transform = '';
       if (cancelled) return;
       const to = dropIndex(d.rects, d.from, e.clientY);
@@ -239,16 +252,17 @@ export async function drawOverview(box, ctx) {
       },
     }, name, dose, mark ? el('span', { className: 'plan-mark', textContent: mark }) : null, handle);
     row.ex = e;
-    if (state.openRow === e) setOffset(row, -TRASH_W);
     rowEls.push(row);
     wireSwipe(row, i);
     wireDrag(handle, row, i);
     const bin = el('button', {
       className: 'row-trash', type: 'button', ariaLabel: 'убрать', onclick: trash(i),
     }, trashIcon(), el('span', { textContent: 'убрать' }));
-    // Перетащенное светится жёлтой полоской — порядок правился руками.
+    // Перетащенное обведено тонким светящимся контуром — порядок правился руками.
     const cls = [sets || e.skipped ? 'done' : '', 'swipe-cell', e.moved ? 'moved' : ''].filter(Boolean).join(' ');
-    list.append(el('li', { className: cls }, bin, row));
+    row.cell = el('li', { className: cls }, bin, row);
+    if (state.openRow === e) setOffset(row, -TRASH_W);
+    list.append(row.cell);
   });
   box.append(list);
 

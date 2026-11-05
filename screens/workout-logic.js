@@ -638,6 +638,8 @@ export function removeExercise(workout, index) {
   ensurePlanIndex(workout);
   workout.exercises.splice(index, 1);
   (workout.prescription || []).splice(index, 1);
+  // Возвращённое встаёт на плановое место и перетащенным не считается.
+  delete ex.moved;
   workout.removed = [...(workout.removed || []), { ex, presc }];
   replanRPE(workout, presc);
   settleMoved(workout);
