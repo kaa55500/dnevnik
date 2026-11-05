@@ -636,14 +636,53 @@ export function removeExercise(workout, index) {
     return { outcome: 'deleted', ex, presc, index };
   }
   ensurePlanIndex(workout);
+  // Кто светился до уборки — для отмены плашкой: уборка гасит и соседей,
+  // ставших на плановое место.
+  const lit = workout.exercises.filter((e) => e.moved);
   workout.exercises.splice(index, 1);
   (workout.prescription || []).splice(index, 1);
-  // Возвращённое встаёт на плановое место и перетащенным не считается.
+  // Возвращённое из сноски встаёт на плановое место и перетащенным не считается.
   delete ex.moved;
   workout.removed = [...(workout.removed || []), { ex, presc }];
   replanRPE(workout, presc);
   settleMoved(workout);
-  return { outcome: 'removed', ex, presc, index };
+  return { outcome: 'removed', ex, presc, index, lit };
+}
+
+/**
+ * Отмена уборки плашкой: упражнение встаёт туда, где только что было, и с той
+ * же отметкой «перетащено», что и до уборки, — это отмена, а не возврат в план
+ * (решение атлета 05.11). Возврат из сноски — `restoreRemoved`, на плановое место.
+ */
+export function undoRemove(workout, gone) {
+  const k = (workout.removed || []).findIndex((r) => r.ex === gone.ex);
+  if (k < 0) return null;
+  const [{ presc }] = workout.removed.splice(k, 1);
+  const at = Math.min(gone.index, workout.exercises.length);
+  workout.exercises.splice(at, 0, gone.ex);
+  workout.prescription = workout.prescription || [];
+  workout.prescription.splice(at, 0, presc);
+  for (const e of gone.lit || []) if (workout.exercises.includes(e)) e.moved = true;
+  replanRPE(workout, presc);
+  settleMoved(workout);
+  return at;
+}
+
+/**
+ * Что в черновике без подходов правилось руками — повод не удалять его молча
+ * кнопкой «просто смотрел» (решение атлета 05.11). Пустой список — правок нет.
+ */
+export function draftEdits(workout) {
+  const ex = workout.exercises || [];
+  const out = [];
+  const removed = (workout.removed || []).length;
+  if (removed) out.push(`убрано ${removed}`);
+  if (ex.some((e) => e.moved)) out.push('порядок');
+  const added = ex.filter((e) => e.unplanned).length;
+  if (added) out.push(`добавлено ${added}`);
+  const swapped = ex.filter((e) => e.replacedWith).length;
+  if (swapped) out.push(`замен ${swapped}`);
+  return out;
 }
 
 /**

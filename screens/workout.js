@@ -786,7 +786,10 @@ async function draw(box) {
   // «Пока пусто» ниже — для сессии вне плана, и её «отменить заполнение»
   // удаляет запись целиком, закрытую тоже.
   const allRemoved = !state.workout.exercises.length && (state.workout.removed || []).length > 0;
-  if (state.showOverview || allRemoved
+  // Обзор держится и после возврата первого убранного: иначе экран
+  // перескакивал на вернувшееся упражнение, и остальные возвращать — заново.
+  if (allRemoved) state.showOverview = true;
+  if (state.showOverview
       || (state.workout.fillMode == null && state.workout.status !== 'done')) {
     await drawOverview(box, screenCtx());
     return;

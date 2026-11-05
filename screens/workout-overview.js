@@ -12,7 +12,7 @@ import { weekdayShort, isoWeek, dm } from '../lib/dates.js';
 import {
   insertExercise, listDose, doneName, moveExercise, removeExercise,
   restoreRemoved, undoDelete, snapshotOrder, restoreOrder, gestureAxis, swipeVerdict, dropIndex,
-  TRASH_W, settleMoved,
+  TRASH_W, settleMoved, undoRemove, draftEdits,
 } from './workout-logic.js';
 import { applyMove, swapSessions } from './session-move.js';
 import { navigate } from '../main.js';
@@ -83,11 +83,17 @@ export async function drawOverview(box, ctx) {
   // со следующей правкой.
   settleMoved(workout);
 
-  // Перед уходом с обзора плашка снимается: она про этот экран.
+  // Открытая корзина — только у строки, что ещё в списке и без подходов:
+  // после ухода и записи подхода она висела бы под строкой с подходом.
+  if (state.openRow && (!workout.exercises.includes(state.openRow)
+      || (state.openRow.sets || []).length)) state.openRow = null;
+
+  // Перед уходом с обзора плашка снимается и корзина закрывается: они про этот экран.
   const leave = () => {
     clearTimeout(state.undoTimer);
     state.undoBar = null;
     state.undoTimer = null;
+    state.openRow = null;
   };
 
   // Правка с откатом: не сохранилось — запись возвращается к снимку, экран
@@ -106,8 +112,11 @@ export async function drawOverview(box, ctx) {
     return true;
   };
 
-  // Плашка одна на экран: новая заменяет прежнюю и живёт свои 5 с.
+  // Плашка одна на экран: новая заменяет прежнюю и живёт свои 5 с. Подсказка
+  // без «вернуть» не затирает плашку с «вернуть» (решение атлета 05.11):
+  // удалённое внеплановое иначе терялось бы от случайного свайпа.
   const showBar = (text, undo) => {
+    if (!undo && state.undoBar && state.undoBar.undo) return false;
     clearTimeout(state.undoTimer);
     state.undoBar = { text, undo };
     state.undoTimer = setTimeout(() => {
@@ -116,6 +125,7 @@ export async function drawOverview(box, ctx) {
       const bar = box.querySelector('.undo-bar');
       if (bar) bar.remove();
     }, UNDO_MS);
+    return true;
   };
 
   const rowEls = [];
@@ -127,10 +137,10 @@ export async function drawOverview(box, ctx) {
   // pan-y`), строка его не трогает. Сдвинутое касание переходом не кончается.
   // Корзина видна, только пока строка сдвинута: иначе она просвечивала бы
   // из-под строки при перетаскивании и по скруглённым краям.
-  const setOffset = (row, x) => {
+  const setOffset = (row, x, reveal = true) => {
     row.style.transform = x ? `translateX(${x}px)` : '';
     clearTimeout(row.hideBin);
-    if (x) row.cell.classList.add('reveal');
+    if (x && reveal) row.cell.classList.add('reveal');
     else row.hideBin = setTimeout(() => row.cell.classList.remove('reveal'), 160);
   };
   const closeOpen = () => {
@@ -138,6 +148,9 @@ export async function drawOverview(box, ctx) {
     state.openRow = null;
     if (open) setOffset(open, 0);
   };
+  // Строка с подходами корзины не даёт: тянется на пару пальцев и упирается,
+  // красное под ней не показывается.
+  const BLOCKED_PULL = 24;
   const wireSwipe = (row, i) => {
     let g = null;
     row.addEventListener('pointerdown', (e) => {
@@ -151,6 +164,12 @@ export async function drawOverview(box, ctx) {
       if (!g.axis) g.axis = gestureAxis(dx, e.clientY - g.y);
       if (g.axis) row.moved = true;
       if (g.axis === 'x') {
+        // Во время свайпа строка идёт за пальцем без анимации.
+        row.classList.add('swiping');
+        if ((row.ex.sets || []).length) {
+          setOffset(row, Math.max(-BLOCKED_PULL, Math.min(0, dx) / 3), false);
+          return;
+        }
         // Дальше кнопки строка тянется вполсилы — упирается, как в Telegram.
         const at = Math.min(0, (g.open ? -TRASH_W : 0) + dx);
         setOffset(row, at < -TRASH_W ? -TRASH_W + (at + TRASH_W) / 2 : at);
@@ -160,6 +179,7 @@ export async function drawOverview(box, ctx) {
       if (!g || drag) return;
       const cur = g;
       g = null;
+      row.classList.remove('swiping');
       const ex = workout.exercises[i];
       const { verdict, sets } = cancelled ? { verdict: cur.open ? 'open' : 'close' } : swipeVerdict({
         axis: cur.axis, dx: e.clientX - cur.x, open: cur.open, sets: (ex.sets || []).length,
@@ -172,41 +192,57 @@ export async function drawOverview(box, ctx) {
       }
       setOffset(row, 0);
       if (state.openRow === ex) state.openRow = null;
-      if (verdict === 'blocked') {
-        showBar(`сначала сотри подходы: ${sets}`, null);
-        draw(box);
-      }
+      if (verdict === 'blocked' && showBar(`сначала сотри подходы: ${sets}`, null)) draw(box);
     };
     row.addEventListener('pointerup', (e) => end(e, false));
     row.addEventListener('pointercancel', (e) => end(e, true));
   };
 
   // Корзина: плановое уходит в «убрано», внеплановое удаляется насовсем.
-  const trash = (i) => async () => {
+  // Упражнение берётся по строке, а не по индексу: при двойном касании второе
+  // его уже не находит (уборка синхронна, до сохранения) — а по индексу
+  // убирался сосед. Под строкой успел появиться подход — корзина закрывается.
+  const trash = (row) => async () => {
+    const i = workout.exercises.indexOf(row.ex);
+    if (i < 0 || (row.ex.sets || []).length) { closeOpen(); return; }
     state.openRow = null;
     let gone = null;
-    if (!(await commit(() => { gone = removeExercise(workout, i); }))) return draw(box);
-    // Плановое возвращается на своё плановое место, внеплановое — на прежнее.
+    const ok = await commit(() => { gone = removeExercise(workout, i); });
+    // Не сохранилось — строка закрывается, ошибка `save` остаётся на экране.
+    if (!ok) { setOffset(row, 0); return; }
+    // Плашка — отмена: упражнение встаёт туда, где было (решение атлета 05.11).
     showBar(`Убрано: ${doneName(gone.ex)}`, () => (gone.outcome === 'removed'
-      ? restoreRemoved(workout, gone.ex)
+      ? undoRemove(workout, gone)
       : undoDelete(workout, gone)));
-    return draw(box);
+    await draw(box);
   };
 
-  // Перетаскивание за ручку: место сброса — по серединам строк, снятым
-  // в момент касания.
+  // Перетаскивание за ручку. Что начинается с ручки, решает первое движение
+  // пальца: вверх-вниз — перетаскивание, вбок — свайп строки (правый большой
+  // палец начинает свайп как раз у ручки). Место сброса — по серединам строк,
+  // снятым в момент начала перетаскивания.
   const wireDrag = (handle, row, i) => {
+    let hd = null;
     handle.addEventListener('pointerdown', (e) => {
-      if (e.stopPropagation) e.stopPropagation();
-      handle.setPointerCapture(e.pointerId);
-      drag = { from: i, y: e.clientY, rects: rowEls.map((r) => r.getBoundingClientRect()) };
-      row.classList.add('dragging');
-      row.cell.classList.add('drag-cell');
+      if (drag) return;
+      hd = { x: e.clientX, y: e.clientY, id: e.pointerId };
     });
     handle.addEventListener('pointermove', (e) => {
-      if (drag) row.style.transform = `translateY(${e.clientY - drag.y}px)`;
+      if (!hd) return;
+      if (!drag) {
+        const axis = gestureAxis(e.clientX - hd.x, e.clientY - hd.y);
+        if (!axis) return;
+        if (axis === 'x') { hd = null; return; }
+        closeOpen();
+        handle.setPointerCapture(hd.id);
+        drag = { from: i, y: hd.y, rects: rowEls.map((r) => r.getBoundingClientRect()) };
+        row.classList.add('dragging');
+        row.cell.classList.add('drag-cell');
+      }
+      row.style.transform = `translateY(${e.clientY - drag.y}px)`;
     });
     const end = async (e, cancelled) => {
+      hd = null;
       if (!drag) return;
       const d = drag;
       drag = null;
@@ -256,7 +292,7 @@ export async function drawOverview(box, ctx) {
     wireSwipe(row, i);
     wireDrag(handle, row, i);
     const bin = el('button', {
-      className: 'row-trash', type: 'button', ariaLabel: 'убрать', onclick: trash(i),
+      className: 'row-trash', type: 'button', ariaLabel: 'убрать', onclick: trash(row),
     }, trashIcon(), el('span', { textContent: 'убрать' }));
     // Перетащенное обведено тонким светящимся контуром — порядок правился руками.
     const cls = [sets || e.skipped ? 'done' : '', 'swipe-cell', e.moved ? 'moved' : ''].filter(Boolean).join(' ');
@@ -299,7 +335,9 @@ export async function drawOverview(box, ctx) {
         el('button', {
           className: 'removed-cap', type: 'button',
           textContent: `убрано · ${removed.length} ${open ? '⌄' : '›'}`,
-          onclick: () => { state.showRemoved = !state.showRemoved; return draw(box); },
+          // Когда убрано всё, сноска раскрыта и сворачивать её некуда.
+          onclick: allRemoved ? null
+            : () => { state.showRemoved = !state.showRemoved; return draw(box); },
         }));
       if (open) {
         for (const r of removed) {
@@ -468,8 +506,16 @@ export async function drawOverview(box, ctx) {
       stopTimer();
       const w = workout;
       const empty = (w.exercises || []).every((e) => !(e.sets || []).length && !e.skipped);
+      // Правки конструктора без подходов — тоже работа: молча не удаляются
+      // (решение атлета 05.11). «Отмена» — выйти, черновик остаётся. Спрашивает
+      // только когда удаление вообще возможно: с подходами и у закрытой — просто выход.
       if (w.id != null && w.status === 'draft' && empty) {
-        try { await delWorkout(w.id); } catch { /* не удалилось — не беда */ }
+        const edits = draftEdits(w);
+        const drop = !edits.length || confirm(`В черновике правки: ${edits.join(', ')}.`
+          + ' Удалить черновик? «Отмена» — выйти, черновик останется.');
+        if (drop) {
+          try { await delWorkout(w.id); } catch { /* не удалилось — не беда */ }
+        }
       }
       ctx.drop();
       navigate('workout', {});

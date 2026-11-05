@@ -1438,6 +1438,8 @@ ol.plan-list.constructor li.moved .plan-row::after {
    иначе гасли бы и полоска «перетащено», и красная корзина. */
 ol.plan-list.constructor li.done { opacity: 1; }
 ol.plan-list.constructor li.done .plan-row > * { opacity: 0.5; }
+/* Во время свайпа строка идёт за пальцем без анимации; отпустил — доезжает с ней. */
+ol.plan-list.constructor .plan-row.swiping { transition: none; }
 ol.plan-list.constructor .plan-row.dragging {
   position: relative;
   z-index: 2;
