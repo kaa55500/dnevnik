@@ -1338,7 +1338,19 @@ ol.stretch .etalon { margin: 0 14px 14px 34px; }
 .wk-top .wk-crumbs { flex: 1 1 auto; }
 .wk-top .wk-clock { margin: 0; }
 .wk-line { font: 500 var(--t-sm)/1.4 var(--mono); color: var(--muted); }
-.wk-round { margin-top: 4px; font-size: var(--t-xs); line-height: 1.35; color: var(--accent); }
+.wk-round { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.wk-round-cap { font-size: var(--t-xs); color: var(--muted); }
+.wk-round .chip {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  font: 500 var(--t-xs) var(--mono);
+}
+.wk-round .chip.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.wk-round .chip.closed:not(.on) { opacity: 0.5; }
 .wk-line .wk-control { display: inline; margin: 0; padding: 0; background: none; }
 /* Строка действий — в одну линию на 375: на две она съедала место у второго
    ряда RPE, который на 393×852 уходил под нижнюю панель (прогон 06.11). */

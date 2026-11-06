@@ -755,7 +755,12 @@ function variantRow(box, ex, variants) {
  */
 function nextButton(box) {
   const { workout, index, extras } = state;
-  const to = nextOpen(workout, index);
+  // В круге закрылось одно, а у других ещё подходы: «дальше» — к ним, по кольцу
+  // (06.11: планка закрылась, а «дальше» увело на разворот гири, махам
+  // оставалось два подхода). Весь круг закрыт — как обычно.
+  const open = roundMates(workout, index)
+    .filter((j) => !exerciseClosed(workout.exercises[j], workout.prescription[j] || {}));
+  const to = open.length ? (open.find((j) => j > index) ?? open[0]) : nextOpen(workout, index);
   const tail = (extras || []).length ? workout.exercises.length : null;
   const go = (text, onclick) => el('button', { className: 'wk-next', textContent: text, onclick });
   if (to != null) return go(`дальше: ${doneName(workout.exercises[to])}`, () => goTo(box, to));
@@ -769,17 +774,28 @@ function nextButton(box) {
 }
 
 /**
- * Строка круга под именем: кто в круге и как он идёт. Без неё «↔» в панели
- * появлялась без объяснения (замечание атлета 06.11).
+ * Круг под именем — кнопками со счётом «Махи 2/4» (замечание атлета 06.11):
+ * видно, кто в круге и сколько у каждого осталось, а прыжок к любому — одно
+ * касание в любом порядке, без стрелок «назад, назад». Текущее подсвечено.
  */
-function roundLine(workout, index, short) {
+function roundLine(box, workout, index) {
   const mates = roundMates(workout, index);
   if (!mates.length) return null;
-  const names = [short, ...mates.map((j) => shortName(doneName(workout.exercises[j])).short)];
-  return el('div', {
-    className: 'wk-round',
-    textContent: `круг: ${names.join(' ↔ ')} — по подходу каждого, затем отдых`,
-  });
+  const members = [index, ...mates].sort((a, b) => a - b);
+  return el('div', { className: 'wk-round' },
+    el('span', { className: 'wk-round-cap', textContent: 'круг' }),
+    ...members.map((j) => {
+      const e = workout.exercises[j];
+      const p = workout.prescription[j] || {};
+      const done = (e.sets || []).filter((x) => !x.warmup).length;
+      const closed = exerciseClosed(e, p);
+      return el('button', {
+        type: 'button',
+        className: 'chip' + (j === index ? ' on' : '') + (closed ? ' closed' : ''),
+        textContent: `${shortName(doneName(e)).short} ${done}/${p.sets || '—'}`,
+        onclick: j === index ? null : () => goTo(box, j),
+      });
+    }));
 }
 
 /** Окно двойного касания: столько «завершить» не слышит после записи. */
@@ -979,7 +995,7 @@ async function draw(box) {
     // Выбор «по плану · дольше · короче» — только у прошлой даты: сегодня
     // отдых якорного лифта меряется метками (решение атлета 05.11).
     dose.anchor && workout.kind !== 'cardio' && mode === 'later' ? restFeelRow(box, ex) : null,
-    roundLine(workout, index, name.short),
+    roundLine(box, workout, index),
   ));
 
   // Строка действий под именем: справочное свёрнуто, заметка, замена и «не делал»
