@@ -460,6 +460,33 @@ ol.wk-sets li.warm { opacity: 0.5; }
   border-radius: 0;
 }
 
+/* Вес и повторы — два острова рядом (решение атлета 06.11): подпись сверху,
+   число крупно на всю ширину острова, под ним шаг «−1,25 · +1,25». В ряд
+   «− число +» в пол-экрана «157,5» не влезает. Один остров (вес тела) —
+   на всю ширину. */
+.wk-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 10px; }
+.wk-form label.island {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px;
+  padding: 10px 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+.island-cap { grid-column: 1 / -1; font-size: var(--t-xs); color: var(--muted); }
+.wk-form label.island input {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  text-align: center;
+  font-size: var(--t-xl);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  border-bottom: 0;
+}
+.wk-form label.island > .step { grid-row: 3; width: 100%; height: 44px; font-size: var(--t-sm); }
+.wk-form label.island > .step:nth-child(2) { grid-column: 1; }
+.wk-form label.island > .step:nth-child(4) { grid-column: 2; }
+
 /* Поле отдыха набрано кеглем 34 px под две цифры; подсказке в нём тесно. */
 .wk-form input::placeholder { font-size: 15px; font-weight: 400; }
 
@@ -615,8 +642,10 @@ ol.wk-sets li.warm { opacity: 0.5; }
   min-height: 0;
   margin: 0;
   text-align: left;
-  font: 400 var(--t-sm)/1.2 var(--mono);
-  color: var(--muted);
+  font: 600 var(--t-sm)/1.2 var(--mono);
+  font-variant-numeric: tabular-nums;
+  /* Счётчик — акцентом, как в прототипе (решение атлета 06.11). */
+  color: var(--accent);
 }
 .wk-dock .wk-add, .wk-dock .wk-next {
   flex: 1 1 auto;

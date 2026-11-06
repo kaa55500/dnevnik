@@ -760,7 +760,9 @@ function nextButton(box) {
   // оставалось два подхода). Весь круг закрыт — как обычно.
   const open = roundMates(workout, index)
     .filter((j) => !exerciseClosed(workout.exercises[j], workout.prescription[j] || {}));
-  const to = open.length ? (open.find((j) => j > index) ?? open[0]) : nextOpen(workout, index);
+  const back = backTo(workout, index);
+  const to = open.length ? (open.find((j) => j > index) ?? open[0])
+    : (back != null ? back : nextOpen(workout, index));
   const tail = (extras || []).length ? workout.exercises.length : null;
   const go = (text, onclick) => el('button', { className: 'wk-next', textContent: text, onclick });
   if (to != null) return go(`дальше: ${doneName(workout.exercises[to])}`, () => goTo(box, to));
@@ -798,10 +800,32 @@ function roundLine(box, workout, index) {
     }));
 }
 
+/**
+ * Пара «на ходу» (замечание атлета 06.11): упражнение, с которого пришёл сюда,
+ * если на нём уже есть подход и оно не закрыто и не пропущено. Плановый круг размечен в плане, а пару
+ * в зале собирают по месту — жим лёжа и гантели, — и обратно к первому
+ * приходилось через план сессии. `null` — возвращаться некуда.
+ */
+function backTo(workout, index) {
+  const j = state.prevEx ? workout.exercises.indexOf(state.prevEx) : -1;
+  if (j < 0 || j === index) return null;
+  const e = workout.exercises[j];
+  if (!e || e.skipped || exerciseClosed(e, workout.prescription[j] || {})) return null;
+  // Пара — когда на прошлом уже работал: открыл сессию и перешёл по плану —
+  // это выбор упражнения, а не пара.
+  if (!(e.sets || []).some((x) => !x.warmup)) return null;
+  return j;
+}
+
 /** Окно двойного касания: столько «завершить» не слышит после записи. */
 const DOUBLE_TAP_MS = 600;
 
 function goTo(box, index) {
+  // Откуда пришёл — для пары «на ходу» (`backTo`): жим лёжа, перешёл на гантели,
+  // и обратно — одним касанием, без плана сессии (замечание атлета 06.11).
+  // Запоминается само упражнение, а не номер: перестановка в «весь план»
+  // сдвигает номера, и номер привёл бы к чужому упражнению.
+  if (index !== state.index) state.prevEx = state.workout.exercises[state.index] || null;
   state.index = index;
   state.editSet = null;
   state.warmup = false;
@@ -1314,12 +1338,17 @@ async function draw(box) {
       },
     }) : null;
 
-    const weightRow = el('label', {}, weightLabel,
-      stepper(wInput, -wStep), wInput, stepper(wInput, wStep));
-    const form = el('div', { className: 'wk-form' },
+    // Вес и повторы — двумя островами рядом (решение атлета 06.11, как
+    // в прототипе): оба числа видны одним взглядом и ниже остаётся место RPE.
+    const island = (cap, input, step) => el('label', { className: 'island' },
+      el('span', { className: 'island-cap', textContent: cap }),
+      stepper(input, -step), input, stepper(input, step));
+    const weightRow = island(weightLabel, wInput, wStep);
+    const pair = el('div', { className: 'wk-pair' },
       bodyweight ? null : weightRow,
-      el('label', {}, repsLabel,
-        stepper(rInput, cardio ? -0.1 : -1), rInput, stepper(rInput, cardio ? 0.1 : 1)),
+      island(repsLabel, rInput, cardio ? 0.1 : 1));
+    const form = el('div', { className: 'wk-form' },
+      pair,
       sInput ? el('label', {}, 'удержание, с',
         stepper(sInput, -5), sInput, stepper(sInput, 5)) : null,
       mInput ? el('label', {}, `${ownMeasure.label}, ${ownMeasure.unit}`,
@@ -1388,7 +1417,7 @@ async function draw(box) {
     if (bodyweight) {
       const addWeight = el('button', {
         className: 'add-weight', textContent: '+ вес (жилет, пояс)',
-        onclick: () => { form.prepend(weightRow); addWeight.remove(); },
+        onclick: () => { pair.prepend(weightRow); addWeight.remove(); },
       });
       box.append(addWeight);
     }
@@ -1659,9 +1688,11 @@ async function draw(box) {
   // коротким «+N» (замечание атлета 06.11): подсобку круга тоже вносят пачкой
   // после зала. Закрытое упражнение партнёра не зовёт: туда ведёт «дальше»,
   // а вторая кнопка остаётся «+ подход» — иначе лишний подход записать нечем.
+  // Вне планового круга — пара на ходу: незакрытое, с которого сюда пришёл.
   const partner = !ex.skipped && state.editSet == null && workingSets > 0
     && !exerciseClosed(ex, workout.prescription[index] || {})
-    ? roundPartner(workout, index) : null;
+    ? (roundPartner(workout, index) ?? (roundMates(workout, index).length ? null : backTo(workout, index)))
+    : null;
   if (partner != null) {
     dockAlt = el('button', {
       className: 'wk-partner',
