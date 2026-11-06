@@ -760,8 +760,16 @@ function nextButton(box) {
   const go = (text, onclick) => el('button', { className: 'wk-next', textContent: text, onclick });
   if (to != null) return go(`дальше: ${doneName(workout.exercises[to])}`, () => goTo(box, to));
   if (tail != null) return go('к растяжке', () => goTo(box, tail));
-  return go('завершить', () => finish(box));
+  // «Завершить» встаёт на место ✓ сразу после записи последнего подхода, и
+  // второе касание двойного тапа закрывало сессию (решение атлета 06.11).
+  return go('завершить', () => {
+    if (Date.now() - (state.recordedAt || 0) < DOUBLE_TAP_MS) return;
+    return finish(box);
+  });
 }
+
+/** Окно двойного касания: столько «завершить» не слышит после записи. */
+const DOUBLE_TAP_MS = 600;
 
 function goTo(box, index) {
   state.index = index;
@@ -800,7 +808,6 @@ async function draw(box) {
 
   const { workout, index } = state;
   const mode = modeOf(workout);
-  box.dataset.day = workout.dayCode;
   const extras = state.extras || [];
   const total = workout.exercises.length + extras.length;
 
@@ -1522,6 +1529,7 @@ async function draw(box) {
         state.control = null;
         state.failure = false;
         state.lastSetAt = workout.lastSetAt;
+        state.recordedAt = Date.now();
         // Отдых закрыт — следующая метка начала подхода ставится заново.
         state.setStartedAt = null;
         await draw(box);
@@ -1588,6 +1596,7 @@ async function draw(box) {
             state.control = null;
             state.failure = false;
             state.lastSetAt = workout.lastSetAt;
+            state.recordedAt = Date.now();
             state.setStartedAt = null;
             return draw(box);
           },

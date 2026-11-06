@@ -347,9 +347,25 @@ export async function drawOverview(box, ctx) {
     box.append(note);
   }
 
-  if (state.stretch) {
-    box.append(el('p', { className: 'hint', textContent:
-      `Хвостом сессии — растяжка, ${state.stretch.positions.length} позиций.` }));
+  // Растяжка хвостом — строкой плана с прыжком (замечание атлета 06.11):
+  // сделал два упражнения и иду тянуться — раньше к ней листали «дальше».
+  // Строка не перетаскивается и не убирается: блок обязателен.
+  if (state.stretch && (state.extras || []).length) {
+    const n = state.stretch.positions.length;
+    const marked = Object.values(state.marks || {}).filter(Boolean).length;
+    box.append(el('ol', { className: 'plan-list overview stretch-tail' },
+      el('li', { className: marked >= n ? 'done' : '' },
+        el('button', {
+          className: 'plan-row',
+          onclick: () => {
+            leave();
+            state.showOverview = false;
+            return goTo(box, workout.exercises.length);
+          },
+        },
+        el('span', { className: 'plan-name', textContent: 'Растяжка' }),
+        el('span', { className: 'plan-dose', textContent: `${n} позиций` }),
+        marked ? el('span', { className: 'plan-mark', textContent: `${marked} из ${n}` }) : null))));
   }
 
   // К упражнениям — с того места, где бросил (`firstOpen` при открытии);

@@ -42,7 +42,6 @@ export async function navigate(name, params = {}) {
   current = name;
   const box = document.getElementById('screen');
   box.innerHTML = '';
-  delete box.dataset.day;
   box.scrollTop = 0;
   // Вкладка подсвечивается по семейству экранов: растяжка и календарь живут
   // внутри «Дня», цели — внутри «Динамики».
