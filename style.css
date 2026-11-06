@@ -271,7 +271,7 @@ button {
   font-size: var(--t-sm);
 }
 
-.back, .today-link, .link, .plan-toggle, .add-weight, .goal-edit {
+.back, .today-link, .link, .add-weight, .goal-edit {
   background: none;
   border: 0;
   color: var(--accent);
@@ -506,7 +506,7 @@ ol.wk-sets li.warm { opacity: 0.5; }
 .warm-toggle {
   flex: 0 0 auto;
   padding: 0 16px;
-  min-height: 56px;
+  min-height: 44px;
   background: var(--card-2);
   border: 0;
   border-radius: 999px;
@@ -522,7 +522,7 @@ ol.wk-sets li.warm { opacity: 0.5; }
 .ctl-toggle {
   flex: 0 0 auto;
   padding: 0 16px;
-  min-height: 56px;
+  min-height: 44px;
   background: var(--card-2);
   border: 0;
   border-radius: 999px;
@@ -537,7 +537,7 @@ ol.wk-sets li.warm { opacity: 0.5; }
 .fail-toggle {
   flex: 0 0 auto;
   padding: 0 16px;
-  min-height: 56px;
+  min-height: 44px;
   background: var(--card-2);
   border: 0;
   border-radius: 999px;
@@ -551,7 +551,24 @@ ol.wk-sets li.warm { opacity: 0.5; }
 .wk-actions:has(.ctl-toggle, .fail-toggle) .warm-toggle,
 .wk-actions:has(.ctl-toggle, .fail-toggle) .ctl-toggle,
 .wk-actions:has(.ctl-toggle, .fail-toggle) .fail-toggle { flex: 1 1 0; }
-.wk-actions:has(.ctl-toggle, .fail-toggle) .wk-add { flex: 1 1 100%; }
+
+/* RPE кнопками (05.11): два ряда по пять по центру; план — контуром,
+   выбор — заливкой. 5 × 56 + 4 × 8 = 312 px — помещается в 375 pt. */
+.wk-rpe-grid { display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 6px 0 4px; }
+.rpe-cap { font: 500 var(--t-xs)/1.2 var(--sans); color: var(--muted); }
+.rpe-row { display: flex; gap: 8px; justify-content: center; }
+.rpe-btn {
+  width: 56px;
+  height: 46px;
+  border: 1.5px solid transparent;
+  border-radius: 12px;
+  background: var(--card-2);
+  color: var(--ink);
+  font: 600 var(--t-md) var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.rpe-btn.plan { border-color: var(--accent); }
+.rpe-btn.on { background: var(--accent); color: #000; }
 
 /* Чипы «план» и «прошлый» над формой: касание ставит вес и повторы.
    Тем же чипом — выбор отдыха на контрольном лифте (29.10). */
@@ -580,21 +597,65 @@ ol.wk-sets li.warm { opacity: 0.5; }
 .finish-row .wk-chips { margin: 0 14px; }
 .skip-move:empty { display: none; }
 
-/* «+ ещё N таких» — под записью, во всю ширину: в «потом» это главный ход. */
-.wk-more { width: 100%; margin-top: 10px; }
-
-.wk-add {
-  flex: 1;
-  min-height: 56px;
+/*
+ * Нижняя панель экрана упражнения (05.11): запись, копии и «дальше» в зоне
+ * большого пальца, над навигацией. Позиция — как у плашки обновления
+ * `.updated`: от высоты таб-бара и safe area. Распорка `.wk-dock-space`
+ * в конце потока не даёт панели закрыть последнюю строку экрана.
+ */
+.wk-dock {
+  position: fixed;
+  left: 0; right: 0;
+  bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
+  z-index: 9;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 8px 16px;
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+}
+.wk-dock-space { height: 84px; }
+.wk-dock .wk-rest {
+  flex: 0 0 64px;
+  min-height: 0;
+  margin: 0;
+  text-align: left;
+  font: 400 var(--t-sm)/1.2 var(--mono);
+  color: var(--muted);
+}
+.wk-dock .wk-add, .wk-dock .wk-next {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 52px;
+  padding: 0 12px;
   border: 0;
   border-radius: 999px;
   background: var(--accent);
   color: #000;
   font: 700 var(--t-md) var(--sans);
-  letter-spacing: 0.2px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Имя партнёра бывает длинным — обрезается, главная кнопка не сжимается в ноль. */
+.wk-dock .wk-partner { max-width: 45%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* Вторая кнопка: «+N таких», лишний «+ подход» или «↔ партнёр» — контуром. */
+.wk-dock .wk-more, .wk-dock .wk-add.extra, .wk-dock .wk-partner {
+  flex: 0 0 auto;
+  min-height: 52px;
+  padding: 0 14px;
+  border: 1.5px solid var(--accent);
+  border-radius: 999px;
+  background: none;
+  color: var(--accent);
+  font: 600 var(--t-sm) var(--sans);
 }
 
-/* Таймер отдыха — герой экрана, как в таймере: крупные тонкие цифры. */
+
 .wk-nav {
   display: flex;
   align-items: center;
@@ -614,25 +675,18 @@ ol.wk-sets li.warm { opacity: 0.5; }
 .wk-nav button[disabled] { opacity: 0.3; }
 
 /*
- * Место под секундомер держится всегда. Раньше пустой счётчик скрывался,
- * кнопки «заметка · замена · пропуск» разъезжались по всей строке, а с началом
- * отдыха прыгали обратно и мельчали — под пальцем менялась вся строка.
+ * Место под счётчик отдыха держится всегда: пустой счётчик скрывался,
+ * и строки под ним прыгали под пальцем, когда появлялась цифра.
+ * Счётчик пассивный — считает вверх от последней записи, без сигнала.
  */
 .wk-rest {
   display: block;
   width: 100%;
-  min-height: 1.1em;
+  min-height: 1.2em;
   margin-top: 14px;
   text-align: center;
-  font: 200 var(--t-huge)/1 var(--mono);
+  font: 400 var(--t-lg)/1.2 var(--mono);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -2px;
-  color: var(--ink);
-}
-.wk-rest.over { color: var(--good); }
-.wk-rest-of {
-  font-size: var(--t-sm);
-  letter-spacing: 0;
   color: var(--muted);
 }
 .wk-zone {
@@ -737,8 +791,6 @@ ol.plan-list li + li { border-top: 1px solid var(--line); }
 .plan-name { grid-column: 1; font-size: var(--t-sm); font-weight: 600; }
 .plan-dose { grid-column: 1; font: 500 var(--t-xs) var(--mono); color: var(--muted); }
 .plan-mark { grid-column: 2; grid-row: 1 / 3; align-self: center; font: 600 var(--t-xs) var(--mono); color: var(--good); }
-ol.plan-list li.now { background: var(--accent-soft); }
-ol.plan-list li.now .plan-name { color: var(--accent); }
 ol.plan-list li.done { opacity: 0.5; }
 
 /* ---------- Растяжка ---------- */
@@ -1090,8 +1142,8 @@ tr.low td:last-child { color: var(--bad); }
 
 /* Шапка тренировки выровнена по центру — эталон встаёт туда же,
    а текст сверки остаётся по левому краю: его читают, а не разглядывают. */
-.wk-head .etalon { align-items: center; }
-.wk-head .etalon-cue { text-align: left; }
+.wk-info-box .etalon { align-items: center; }
+.wk-info-box .etalon-cue { text-align: left; }
 
 /* В блоке растяжки эталон живёт внутри строки позиции. */
 ol.stretch .etalon { margin: 0 14px 14px 34px; }
@@ -1277,17 +1329,42 @@ ol.stretch .etalon { margin: 0 14px 14px 34px; }
 
 .file-hidden { display: none; }
 
-/* Полоса прогресса сессии и очередь ближайших упражнений. */
-.wk-date {
-  display: block;
-  width: 100%;
-  padding: 0 0 2px;
+/*
+ * Шапка упражнения одной строкой (05.11): весь план · дата · день и шаг · часы.
+ * Справочное свёрнуто под «снаряд, видео» — поля ввода на первом экране.
+ */
+.wk-top { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-bottom: 4px; }
+.wk-overview, .wk-date {
+  min-height: var(--tap);
+  padding: 0;
   background: none;
   border: 0;
-  color: var(--ink);
-  text-align: center;
-  font: 700 var(--t-md)/1.2 var(--sans);
+  font: 600 var(--t-sm) var(--sans);
 }
+.wk-overview { color: var(--accent); }
+.wk-date { color: var(--ink); }
+.wk-top .wk-crumbs { flex: 1 1 auto; }
+.wk-top .wk-clock { margin: 0; }
+.wk-line { font: 500 var(--t-sm)/1.4 var(--mono); color: var(--muted); }
+.wk-line .wk-control { display: inline; margin: 0; padding: 0; background: none; }
+/* Строка действий — в одну линию на 375: на две она съедала место у второго
+   ряда RPE, который на 393×852 уходил под нижнюю панель (прогон 06.11). */
+.wk-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 4px 0 10px; }
+.wk-acts button {
+  min-height: 36px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: none;
+  color: var(--ink);
+  font-size: 13px;
+}
+.wk-acts button.on { border-color: var(--accent); color: var(--accent); }
+.wk-info-box { margin: 0 0 10px; padding: 10px 12px; border-radius: var(--radius); background: var(--card); }
+.wk-detail { margin-bottom: 6px; font-size: var(--t-sm); color: var(--ink); }
+.wk-all { display: block; margin: 4px auto 0; }
+
+/* Полоса прогресса сессии и очередь ближайших упражнений. */
 
 .wk-bar {
   height: 3px;
@@ -1356,23 +1433,7 @@ ol.stretch .etalon { margin: 0 14px 14px 34px; }
 .bonus-dose { font-size: 13px; color: var(--accent); white-space: nowrap; }
 .wk-gate { margin-top: 6px; font-size: 12px; color: var(--muted); }
 
-/* ---- Режим заполнения, правка подхода, упражнение вне плана (01.09) ---- */
-
-/* Режим виден на каждом шаге: от него зависит, пишется ли отдых. */
-.wk-mode {
-  display: inline-block;
-  margin: 0 auto 6px;
-  padding: 3px 10px;
-  background: var(--card-2);
-  color: var(--muted);
-  border: 0;
-  border-radius: 999px;
-  font-size: 12px;
-  letter-spacing: 0.02em;
-}
-
-/* Обзор перед выбором режима: план читается, но не тапается. */
-ol.plan-list.overview .plan-row { cursor: default; }
+/* ---- Правка подхода, упражнение вне плана (01.09) ---- */
 
 /* Конструктор сессии: строка тянется вправо свайпом, ручка ≡ — перетаскивание.
    Вертикальный скролл остаётся браузеру, горизонталь и ручка — нам. */
@@ -1512,8 +1573,7 @@ ol.plan-list.constructor .plan-row.dragging {
 }
 .removed-go { color: var(--accent); font-weight: 600; font-size: var(--t-xs); }
 
-/* Вставка упражнения между строками плана — тонкая полоса, не кнопка-блок. */
-ol.plan-list li.plan-insert { border-top: 0; }
+/* Вставка упражнения в обзоре — тонкая полоса, не кнопка-блок. */
 .insert-here {
   width: 100%;
   background: none;
@@ -1564,9 +1624,7 @@ ol.wk-sets li.editing { outline: 1px solid var(--accent); border-radius: 8px; }
   font: inherit;
   min-height: var(--tap);
 }
-.wk-add.editing { background: var(--warn); color: #000; }
-/* Лишний подход после закрытого плана — вторичным стилем (29.10). */
-.wk-add.extra { background: var(--card-2); color: var(--accent); }
+.wk-dock .wk-add.editing { background: var(--warn); color: #000; }
 
 /* Заголовок текущей недели в выборе сессии. */
 h2.wk-now { color: var(--accent); }
@@ -1735,3 +1793,27 @@ label.from-plan input[disabled] {
 
 /* Добавление упражнения — постоянная строка под очередью, не кнопка в шапке. */
 .add-exercise { margin-top: 10px; }
+
+/*
+ * Экран дня (05.11): тренировка — первой карточкой, остальное — строками
+ * с состоянием справа. Касание раскрывает строку её карточкой ниже.
+ */
+.day-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: var(--tap);
+  margin-top: 8px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--ink);
+  font: 500 var(--t-md) var(--sans);
+  text-align: left;
+}
+.day-row .row-title { flex: 1; }
+.day-row .row-value { color: var(--muted); font-size: var(--t-sm); }
+.day-row.open { color: var(--accent); }
+.session-done .group-row { width: 100%; }

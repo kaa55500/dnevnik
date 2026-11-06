@@ -1,4 +1,5 @@
 import { fromISO, isoWeek, addDays, weekDays } from '../lib/dates.js';
+import { setProgress } from './workout-logic.js';
 
 const WED = 3;
 const SUN = 0;
@@ -322,4 +323,30 @@ export function debts(ctx) {
     });
   }
   return out.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/**
+ * Подпись главной кнопки карточки тренировки (решение атлета 05.11): «Начать»
+ * у незаведённой и пустой, «Продолжить · подход k из M» у начатой — видно,
+ * с чего продолжишь, не открывая сессию. Счёт — тот же, что у полосы
+ * прогресса (`setProgress`): плановые подходы, пропуск закрывает свои.
+ */
+export function sessionStart(workout) {
+  if (!workout) return 'Начать';
+  const { taken, planned } = setProgress(workout);
+  if (!taken) return 'Начать';
+  return taken < planned ? `Продолжить · подход ${taken + 1} из ${planned}` : 'Продолжить';
+}
+
+/**
+ * Прошлая незакрытая сессия для карточки на сегодняшнем экране дня (решение
+ * атлета 05.11): самый свежий черновик раньше сегодня, в котором есть хоть
+ * один подход. Черновики висели неделями — в «Не закрыто» их видно, но закрыть
+ * можно было только открыв сессию и дойдя до ЗАВЕРШИТЬ. Пустой черновик —
+ * открытая по ошибке сессия, а не тренировка: карточки он не получает.
+ */
+export function lastDraft(workouts, today) {
+  const list = (workouts || []).filter((w) => w.status === 'draft' && w.date < today
+    && (w.exercises || []).some((e) => (e.sets || []).length));
+  return list.sort((a, b) => a.date.localeCompare(b.date)).at(-1) || null;
 }

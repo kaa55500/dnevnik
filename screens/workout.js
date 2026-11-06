@@ -5,19 +5,20 @@ import {
 import { sessionFor, sessionsFor, trainingSessions } from '../plan.js';
 import { todayISO, weekdayShort, isoWeek, weekDays, dm } from '../lib/dates.js';
 import {
-  fmtNum, fmtWeight, fmtDuration, fmtClock, fmtRest, parseNum, setAmount, prevSessionLine,
+  fmtNum, fmtWeight, fmtDuration, fmtClock, parseNum, setAmount, prevSessionLine,
   measureText,
 } from '../lib/format.js';
 import { backupNote, backupSender, sendDue } from './backup-note.js';
 import {
   nextSetDefaults, planReps, averageRPE, isControlSet, asksChestSignal,
-  fillModeOf, restForSet, requiredPairs, workoutElapsed, cardioType,
+  sessionMode, restForSet, restBetween, requiredPairs, workoutElapsed, cardioType,
   prescriptionFor, exerciseClosed, orderedSets, setProgress,
   bodyweightForm, restKind, setMeasure, markControl,
   firstOpen, debtNames, exerciseHistory, doneName, isHoldSet, checkSetInput,
   removeExercise, undoDelete, bonusToAppend, effectivePresc, insteadLine, listDose,
-  repsPerSide, weightPerHand, fillChips, chipText, asksRPE, copiesOfLast, nextOpenAfter,
-  REST_FEEL, SKIP_KINDS, skipAs, moveTargets, incomingMoves, insertMoved,
+  repsPerSide, weightPerHand, fillChips, chipText, asksRPE, copiesOfLast, nextOpenAfter, nextOpen,
+  REST_FEEL, SKIP_KINDS, skipAs, moveTargets, incomingMoves, insertMoved, RPE_ROWS, rpeOutline,
+  shortName, roundPartner, takePair, putPair,
 } from './workout-logic.js';
 import { MACHINES, cellHint, cellFor, cellKg } from '../lib/machines.js';
 import { sessionSummary } from '../export.js';
@@ -28,7 +29,7 @@ import { drawOverview, exercisePicker } from './workout-overview.js';
 import { makeWorkout, startWorkout } from './session-move.js';
 import { navigate } from '../main.js';
 
-let state = null;      // { workout, index, timer, restLeft, warmup, guide, showPlan }
+let state = null;      // { workout, index, clock, warmup, guide, showInfo }
 
 function el(tag, props = {}, ...kids) {
   const n = document.createElement(tag);
@@ -82,27 +83,14 @@ function weekCrumb(workout) {
   return workout.weekN ? `Н${workout.weekN} · ` : '';
 }
 
-function stopTimer() {
-  if (state?.timer) {
-    clearInterval(state.timer);
-    state.timer = null;
-  }
-  // Цифра гасится вместе с интервалом. Пока таймер замирал на нуле, забытое
-  // `restLeft` было нулём и в разметку не попадало само собой. Теперь счёт
-  // уходит в минус, отрицательное значение переживало бы `goTo`, и на новом
-  // упражнении висел бы перебор от подхода, сделанного в прошлом.
-  if (state) state.restLeft = null;
-}
-
 /**
- * Уход с экрана: гасим оба таймера и сохраняем растяжку. Часы висели
- * осиротевшим интервалом — `stopClock` смотрит на `state?.clock`, а `state`
- * к тому моменту уже null, и тик продолжал раз в секунду писать время
- * прошлой тренировки в часы следующей. Отметки растяжки при этом жили
- * только в памяти и пропадали молча, в отличие от подходов.
+ * Уход с экрана: гасим часы и сохраняем растяжку. Часы висели осиротевшим
+ * интервалом — `stopClock` смотрит на `state?.clock`, а `state` к тому
+ * моменту уже null, и тик продолжал раз в секунду писать время прошлой
+ * тренировки в часы следующей. Отметки растяжки при этом жили только
+ * в памяти и пропадали молча, в отличие от подходов.
  */
 export async function leave() {
-  stopTimer();
   stopClock();
   try {
     await persistStretch();
@@ -118,43 +106,21 @@ function stopClock() {
 }
 
 /**
- * Остаток отдыха и его плановая длина: «1:12 из 3:00». Хвост «из» — мелким
- * кеглем: цифры таймера набраны огромными, и двенадцать знаков в одну
- * строку не влезают в ширину телефона.
+ * Режим этой сессии: по ходу — только сегодняшняя (`sessionMode`).
  */
-function paintRest(label, left) {
-  label.textContent = left != null ? fmtRest(left) : '';
-  if (left != null && state.restPlan) {
-    label.append(el('span', { className: 'wk-rest-of', textContent: ` из ${fmtRest(state.restPlan)}` }));
-  }
-}
+const modeOf = (workout) => sessionMode(workout, todayISO());
 
 /**
- * Отсчёт отдыха. Через ноль таймер не останавливается, а уходит в минус:
- * замершие 00:00 говорили только «время вышло», а между подходами нужен
- * ответ на другой вопрос — сколько ты уже стоишь. Потолка у минуса нет,
- * −12:34 такая же честная цифра, как −00:15. Гасит счёт запись следующего
- * подхода, уход с экрана и переход на другое упражнение (`goTo`).
+ * Счётчик отдыха — сколько прошло с последней записи (решение атлета 05.11).
+ * Он пассивный: считает вверх, без плановой длины, отсчёта и вибрации, и на
+ * запись не влияет — отдых в подход пишется по меткам (`restForSet`). Метка
+ * лежит в самой записи, поэтому после выгрузки PWA цифра верная. Только
+ * у сегодняшней незакрытой сессии: у прошлой мерить нечего.
  */
-function startTimer(seconds, onTick) {
-  stopTimer();
-  const started = Date.now();
-  state.restLeft = seconds;
-  onTick(seconds);
-  // Вибрация — событие пересечения нуля, а не состояния «уже за нулём»:
-  // тик идёт четыре раза в секунду и звал бы телефон до конца отдыха.
-  let buzzed = false;
-  state.timer = setInterval(() => {
-    const left = seconds - Math.round((Date.now() - started) / 1000);
-    state.restLeft = left;
-    onTick(left);
-    if (left <= 0 && !buzzed) {
-      buzzed = true;
-      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-    }
-  }, 250);
-  // В браузере метода нет, в Node интервал держит процесс живым.
-  if (state.timer && typeof state.timer.unref === 'function') state.timer.unref();
+function restCounter(workout) {
+  if (modeOf(workout) !== 'live' || workout.status === 'done') return null;
+  const sec = restBetween(workout.lastSetAt, Date.now());
+  return sec == null ? null : `отдых ${fmtDuration(sec)}`;
 }
 
 async function save(box) {
@@ -163,8 +129,13 @@ async function save(box) {
     // стоит сигнал пересборки (правило 4, две сессии подряд с отклонением
     // ≥ 1,5), и он читал бы цифру, посчитанную до дописывания.
     if (state.workout.status === 'done') state.workout.avgRPE = averageRPE(state.workout);
+    // Первое сохранение заводит запись: до первого действия её в базе нет.
+    // Режим пишется тем же значением, что решает дата: его печатает журнал
+    // («заполнено по ходу / после»), а поведение он больше не решает.
+    if (state.workout.id == null && !state.workout.fillMode) {
+      state.workout.fillMode = modeOf(state.workout);
+    }
     const id = await putWorkout(state.workout);
-    // Первое сохранение заводит запись: до выбора режима её в базе нет.
     if (state.workout.id == null) state.workout.id = id;
     return true;
   } catch (err) {
@@ -216,24 +187,36 @@ async function persistStretch() {
   await putDay(fresh);
 }
 
-async function finish(box) {
+/**
+ * Закрытие сессии. `asIs` — «закрыть как есть» с экрана дня (решение атлета
+ * 05.11): растяжку этого экрана никто не трогал, и `persistStretch` день
+ * черновика не переписывает — иначе прошлый день получил бы метку «задним
+ * числом» от одного касания.
+ */
+async function finish(box, { asIs = false } = {}) {
   const { workout } = state;
-  try {
-    await persistStretch();
-  } catch (err) {
-    box.prepend(el('div', {
-      className: 'error',
-      textContent: 'Блок растяжки не сохранён: ' + err.message,
-    }));
-    return;
+  if (!asIs) {
+    try {
+      await persistStretch();
+    } catch (err) {
+      box.prepend(el('div', {
+        className: 'error',
+        textContent: 'Блок растяжки не сохранён: ' + err.message,
+      }));
+      return;
+    }
   }
   workout.avgRPE = averageRPE(workout);
   workout.status = 'done';
   // Повторное ЗАВЕРШИТЬ на переоткрытой сессии переписывало время окончания,
   // и часы печатали сутки: 1440:00 при отсчёте от первого подхода.
-  if (!workout.finishedAt) workout.finishedAt = new Date().toISOString();
+  // Сессия прошлой даты кончилась последним подходом, а не «сейчас»: черновик
+  // 03.11, закрытый 05.11, иначе показал бы двое суток тренировки.
+  if (!workout.finishedAt) {
+    workout.finishedAt = workout.date < todayISO() && workout.lastSetAt
+      ? workout.lastSetAt : new Date().toISOString();
+  }
   if (!(await save(box))) return;
-  stopTimer();
   stopClock();
 
   // Кардио-день заводит сессию дня сам: забег — и тест, и нагрузка (R5).
@@ -420,8 +403,15 @@ async function drawStretch(box) {
   const hint = warmupHint(stretch, homeDone);
   if (hint) box.append(el('p', { className: 'hint', textContent: hint }));
 
-  box.append(stretchList(stretch.positions, guide, marks, secs,
-    () => { persistStretch().catch(() => {}); }));
+  // Сделал блок целиком — «Завершить» встаёт сразу под ним (решение атлета
+  // 05.11): блок — последний шаг, и до кнопки внизу экрана больше не листают.
+  const allMarked = () => stretch.positions.every((p) => marks[p.n] === true);
+  const wasAll = allMarked();
+  box.append(stretchList(stretch.positions, guide, marks, secs, async () => {
+    try { await persistStretch(); } catch { /* отметка остаётся в памяти */ }
+    if (!wasAll && allMarked() && state) await draw(box);
+  }));
+  if (wasAll) finishButton(box);
 
   const splitInput = stretch.measureSplit
     ? el('input', { type: 'number', step: '0.5', inputMode: 'decimal', value: week.splitGap ?? '' })
@@ -546,7 +536,9 @@ function tailNav(box, index, total) {
     onclick: () => { leave(); navigate('workout', {}); },
   }));
 
-  finishButton(box);
+  // Блок сделан целиком — «Завершить» уже стоит под ним (`drawStretch`).
+  const blockDone = state.stretch && state.stretch.positions.every((p) => state.marks[p.n] === true);
+  if (!blockDone) finishButton(box);
 }
 
 /**
@@ -556,12 +548,10 @@ function tailNav(box, index, total) {
  */
 function screenCtx() {
   return {
-    state, draw, goTo, save, stopTimer, persistStretch, weekCrumb, extraSteps,
+    state, draw, goTo, save, persistStretch, weekCrumb, extraSteps,
     drop: () => { state = null; },
   };
 }
-
-const MODE_RU = { live: 'сейчас', later: 'потом' };
 
 /**
  * Ввод текста прямо на экране. Раньше заметка, замена и причина пропуска
@@ -758,8 +748,22 @@ function variantRow(box, ex, variants) {
     })));
 }
 
+/**
+ * «Дальше» панели: ближайшее незакрытое, вперёд, а потом сверху (`nextOpen`).
+ * Закрыто всё — к растяжке, если она хвостом сессии, иначе завершить:
+ * тем же путём, что ЗАВЕРШИТЬ внизу экрана.
+ */
+function nextButton(box) {
+  const { workout, index, extras } = state;
+  const to = nextOpen(workout, index);
+  const tail = (extras || []).length ? workout.exercises.length : null;
+  const go = (text, onclick) => el('button', { className: 'wk-next', textContent: text, onclick });
+  if (to != null) return go(`дальше: ${doneName(workout.exercises[to])}`, () => goTo(box, to));
+  if (tail != null) return go('к растяжке', () => goTo(box, tail));
+  return go('завершить', () => finish(box));
+}
+
 function goTo(box, index) {
-  stopTimer();
   state.index = index;
   state.editSet = null;
   state.warmup = false;
@@ -768,6 +772,7 @@ function goTo(box, index) {
   state.finishCheck = false;
   state.insertAt = null;
   state.textEdit = null;
+  state.showInfo = false;
   // Метка начала подхода принадлежит упражнению, с которого уходишь: иначе
   // отдых первого подхода на новом упражнении закрылся бы касанием, сделанным
   // на прошлом, и оказался бы короче настоящего.
@@ -779,9 +784,8 @@ async function draw(box) {
   box.innerHTML = '';
   if (!state) return;
 
-  // Обзор: до выбора режима — сам собой, дальше — по кнопке «к плану сессии».
-  // Посмотреть весь план посреди тренировки нужно постоянно, а единственным
-  // входом туда был чип режима, который заодно сбрасывал сам режим.
+  // Обзор — по кнопке «весь план»: сессия открывается сразу упражнением,
+  // развилки режима на входе больше нет (решение атлета 05.11).
   // Всё убрано — тоже обзор: вернуть убранное можно только оттуда, а ветка
   // «Пока пусто» ниже — для сессии вне плана, и её «отменить заполнение»
   // удаляет запись целиком, закрытую тоже.
@@ -789,13 +793,13 @@ async function draw(box) {
   // Обзор держится и после возврата первого убранного: иначе экран
   // перескакивал на вернувшееся упражнение, и остальные возвращать — заново.
   if (allRemoved) state.showOverview = true;
-  if (state.showOverview
-      || (state.workout.fillMode == null && state.workout.status !== 'done')) {
+  if (state.showOverview) {
     await drawOverview(box, screenCtx());
     return;
   }
 
   const { workout, index } = state;
+  const mode = modeOf(workout);
   box.dataset.day = workout.dayCode;
   const extras = state.extras || [];
   const total = workout.exercises.length + extras.length;
@@ -831,7 +835,6 @@ async function draw(box) {
       className: 'back danger', textContent: 'отменить заполнение',
       onclick: async () => {
         if (!confirm('Удалить пустую сессию?')) return;
-        stopTimer();
         if (workout.id != null) {
           try { await delWorkout(workout.id); } catch { /* остаётся как есть */ }
         }
@@ -859,7 +862,7 @@ async function draw(box) {
   }
 
   // Строка плана слота: по ней считается «план закрыт», из неё форма замены
-  // берёт варианты. Доза того, что делается сейчас, — `presc` ниже.
+  // берёт варианты. Доза того, что делается сейчас, — `dose` ниже.
   const plan = workout.prescription[index] || {};
   const ex = workout.exercises[index];
   // Подходов набрано столько, сколько в плане — значит пора дальше,
@@ -875,22 +878,22 @@ async function draw(box) {
   // Справочник — того, что делается: у замены свой эталон, тренажёр и мера.
   const guide = state.guide.get(doneName(ex));
   // У замены своя доза: из плана — только число подходов (`effectivePresc`).
-  const presc = effectivePresc(plan, ex, guide);
+  const dose = effectivePresc(plan, ex, guide);
   // Модель тренажёра — из строки плана, а без неё — из справочника: скручивания
   // делаются в Hoist, хотя план называет блок стоя.
-  const machineModel = presc.machine
+  const machineModel = dose.machine
     || (guide && guide.machine ? guide.machine.model : null);
   const past = lastSession(history);
 
   // «5×удержание 25–35 с» слипается в нечитаемое: множитель без пробелов
   // годится только для коротких числовых повторов вроде «4×5».
-  const shortReps = /^[\d\s–—-]+$/.test(String(presc.reps ?? ''));
-  const planLine = presc.replaced ? insteadLine(presc)
-    : `план ${presc.sets}${shortReps ? '×' : ' × '}${presc.reps}`
-    + (presc.rpe != null ? ` · RPE ${fmtNum(presc.rpe, 1)}` : '')
-    + (presc.weight ? ` · ${presc.weight}` : '')
+  const shortReps = /^[\d\s–—-]+$/.test(String(dose.reps ?? ''));
+  const planLine = dose.replaced ? insteadLine(dose)
+    : `план ${dose.sets}${shortReps ? '×' : ' × '}${dose.reps}`
+    + (dose.rpe != null ? ` · RPE ${fmtNum(dose.rpe, 1)}` : '')
+    + (dose.weight ? ` · ${dose.weight}` : '')
     // Плановый отдых виден до подхода, а не только таймером после него.
-    + (presc.rest > 0 ? ` · отдых ${fmtDuration(presc.rest)}` : '');
+    + (dose.rest > 0 ? ` · отдых ${fmtDuration(dose.rest)}` : '');
 
   // Полоса меряется подходами, а не упражнениями: по упражнениям она стояла
   // на нуле всё первое из них, и пустой трек читался разделителем, а не шкалой.
@@ -898,70 +901,115 @@ async function draw(box) {
   // что значит «план закрыт».
   const { percent: progress } = setProgress(workout);
 
-  // Дата стоит первой строкой: в зале открывают несколько дней подряд,
-  // и без неё непонятно, какой именно заполняешь.
+  // Шапка одной строкой (решение атлета 05.11): весь план, дата, день, шаг —
+  // поля ввода видны на первом экране. Дата стоит в ней всегда: в зале
+  // открывают несколько дней подряд, и без неё непонятно, какой заполняешь.
   const d = workout.date;
-  const dateText = `${weekdayShort(d)} ${dm(d)}`
-    + (d === todayISO() ? ' · сегодня' : '');
-
-  box.append(el('div', { className: 'wk-head' },
+  box.append(el('div', { className: 'wk-top' },
+    el('button', {
+      className: 'wk-overview', textContent: '‹ весь план',
+      onclick: () => { state.showOverview = true; return draw(box); },
+    }),
     el('button', {
       className: 'wk-date',
-      textContent: dateText,
+      textContent: `${weekdayShort(d)} ${dm(d)}` + (d === todayISO() ? ' · сегодня' : ''),
       onclick: () => navigate('day', { date: d }),
     }),
-    el('div', {
+    el('span', {
       className: 'wk-crumbs',
-      textContent: `${weekCrumb(workout)}${workout.dayCode} · шаг ${index + 1}/${total}`
+      textContent: `${weekCrumb(workout)}${workout.dayCode} · ${index + 1}/${total}`
         + (workout.movedFrom ? ` · перенос с ${dm(workout.movedFrom)}` : '')
         + (workout.backdated ? ' · задним числом' : '')
         + (workout.status === 'done' ? ' · записана' : ''),
     }),
-    // Режим виден всё время и переспрашивается тапом: заполнение начинают
-    // онлайн, а дописывают вечером, и цифра отдыха от этого зависит.
-    workoutElapsed(workout) != null && fillModeOf(workout) === 'live'
-      ? el('div', { className: 'wk-clock', textContent: fmtClock(workoutElapsed(workout)) })
-      : null,
-    el('button', {
-      className: 'wk-mode',
-      textContent: `заполняю ${MODE_RU[fillModeOf(workout)]}`,
-      onclick: async () => {
-        stopTimer();
-        workout.fillMode = null;
-        if (await save(box)) draw(box);
-      },
-    }),
-    el('h2', { textContent: ex.replacedWith || ex.name }),
-    // Зона усилия — из плана (ЦИКЛ-4.md §4, пишет генератор цикла): класс
-    // упражнения меняется вместе с циклом, в коде его нет.
-    presc.zone ? el('div', { className: 'wk-zone', textContent: presc.zone }) : null,
-    presc.unplanned || ex.unplanned
-      ? el('div', {
-        className: 'wk-plan',
-        // Перенесённое из другой сессии — «вне плана», но со своей плановой дозой.
-        textContent: presc.movedFrom
-          ? `перенос с ${weekdayShort(presc.movedFrom)} ${dm(presc.movedFrom)} · ${planLine}` : 'вне плана',
-      })
-      : el('div', { className: 'wk-plan', textContent: planLine }),
-    el('div', {
-      className: 'wk-prev',
-      textContent: past ? prevSessionLine({
-        date: past.date,
-        sets: past.sets,
-        perSide: weightPerHand(presc),
-        repsSide: repsPerSide(presc),
-        cellOf: (v, s) => cellHint(machineModel, v, s && s.cell),
-        measure: presc.measure,
-      }) : 'первый раз',
-    }),
-    presc.control ? el('div', { className: 'wk-control', textContent: 'контрольный подход' }) : null,
-    presc.anchor && workout.kind !== 'cardio' ? restFeelRow(box, ex) : null,
-    (presc.variants || []).length && !ex.replacedWith ? variantRow(box, ex, presc.variants) : null,
-    presc.plus ? el('div', { className: 'wk-gate', textContent: PLUS_GATE }) : null,
-    // Эталон стоит там, где делаешь движение. Раньше он лежал за двумя
-    // переходами в справочнике, и в зале его не открывал никто.
-    etalonBlock(guide),
+    // Часы тренировки — только у сегодняшней сессии: у прошлой они считали бы
+    // от первого подхода до «сейчас».
+    workoutElapsed(workout) != null && mode === 'live'
+      ? el('span', { className: 'wk-clock', textContent: fmtClock(workoutElapsed(workout)) })
+      : null));
+
+  // Имя — короткое: уточнения плана («разминка без лямок…») уходят под
+  // «снаряд, видео». Под именем одна строка: план и прошлый раз.
+  const name = shortName(doneName(ex));
+  const planText = dose.unplanned || ex.unplanned
+    // Перенесённое из другой сессии — «вне плана», но со своей плановой дозой.
+    ? (dose.movedFrom
+      ? `перенос с ${weekdayShort(dose.movedFrom)} ${dm(dose.movedFrom)} · ${planLine}` : 'вне плана')
+    : planLine;
+  box.append(el('div', { className: 'wk-head' },
+    el('h2', { textContent: name.short }),
+    el('div', { className: 'wk-line' },
+      el('span', { className: 'wk-plan', textContent: planText }),
+      el('span', { className: 'wk-sep', textContent: ' · ' }),
+      el('span', {
+        className: 'wk-prev',
+        textContent: past ? prevSessionLine({
+          date: past.date,
+          sets: past.sets,
+          perSide: weightPerHand(dose),
+          repsSide: repsPerSide(dose),
+          cellOf: (v, s) => cellHint(machineModel, v, s && s.cell),
+          measure: dose.measure,
+        }) : 'первый раз',
+      }),
+      dose.control ? el('span', { className: 'wk-control', textContent: ' · контрольный подход' }) : null),
+    // Выбор «по плану · дольше · короче» — только у прошлой даты: сегодня
+    // отдых якорного лифта меряется метками (решение атлета 05.11).
+    dose.anchor && workout.kind !== 'cardio' && mode === 'later' ? restFeelRow(box, ex) : null,
   ));
+
+  // Строка действий под именем: справочное свёрнуто, заметка, замена и «не делал»
+  // открывают поле на экране (`textEditor`).
+  const toggleEdit = (kind) => () => {
+    state.textEdit = state.textEdit === kind ? null : kind;
+    return draw(box);
+  };
+  box.append(el('div', { className: 'wk-acts' },
+    el('button', {
+      className: 'wk-info' + (state.showInfo ? ' on' : ''),
+      textContent: state.showInfo ? 'снаряд, видео ▴' : 'снаряд, видео ▾',
+      onclick: () => { state.showInfo = !state.showInfo; return draw(box); },
+    }),
+    el('button', {
+      className: state.textEdit === 'note' ? 'on' : '', textContent: 'заметка', onclick: toggleEdit('note'),
+    }),
+    el('button', {
+      className: state.textEdit === 'replace' ? 'on' : '', textContent: 'замена', onclick: toggleEdit('replace'),
+    }),
+    el('button', {
+      className: state.textEdit === 'skip' ? 'on' : '',
+      textContent: 'не делал',
+      // У бонуса причина всегда одна — «это доп», и спрашивать её — пустой
+      // шаг (решение 23.09). На основных причину читает разбор план-факт.
+      onclick: async () => {
+        if (plan.optional) {
+          ex.skipped = true;
+          ex.skipReason = 'доп';
+          if (!(await save(box))) return;
+          state.textEdit = null;
+          return afterTextEdit(box, 'skip');
+        }
+        return toggleEdit('skip')();
+      },
+    })));
+
+  // Справочное — по касанию: уточнение имени, зона, снаряд, тренажёр, эталон.
+  // Зона усилия — из плана (пишет генератор цикла): класс упражнения меняется
+  // вместе с циклом, в коде его нет. Эталон стоит там, где делаешь движение:
+  // за двумя переходами в справочнике его не открывал никто.
+  if (state.showInfo) {
+    box.append(el('div', { className: 'wk-info-box' },
+      name.detail ? el('div', { className: 'wk-detail', textContent: name.detail }) : null,
+      dose.zone ? el('div', { className: 'wk-zone', textContent: dose.zone }) : null,
+      (dose.variants || []).length && !ex.replacedWith ? variantRow(box, ex, dose.variants) : null,
+      machineModel && guide && guide.machine
+        ? el('p', { className: 'machine-hint', textContent: `${guide.machine.model}: ${guide.machine.hint}` })
+        : null,
+      dose.plus ? el('div', { className: 'wk-gate', textContent: PLUS_GATE }) : null,
+      etalonBlock(guide)));
+  }
+
+  if (state.textEdit) box.append(textEditor(box, ex, state.textEdit, plan));
 
   bonusBanner(box);
 
@@ -973,50 +1021,11 @@ async function draw(box) {
   bar.append(fill);
   box.append(bar);
 
-
-  // Весь план сессии: видно, что впереди, и можно прыгнуть на любое упражнение.
-  box.append(el('button', {
-    className: 'plan-toggle',
-    // Считаются упражнения, а не шаги: в очереди их больше на хвост,
-    // и одинаковое слово при разных числах читается как ошибка.
-    textContent: state.showPlan
-      ? 'скрыть список упражнений'
-      : `все упражнения сессии (${workout.exercises.length})`,
-    onclick: () => { state.showPlan = !state.showPlan; return draw(box); },
-  }));
-
-  if (state.showPlan) {
-    const list = el('ol', { className: 'plan-list' });
-    // Вставка между строками: упражнение вне плана встаёт туда, где его
-    // реально сделали, а не в конец. 01.09 три выхода силой записать было
-    // некуда — дописывать умел только бонус.
-    const inserter = (at) => el('li', { className: 'plan-insert' }, el('button', {
-      className: 'insert-here', textContent: '+ упражнение сюда',
-      onclick: () => { state.insertAt = at; return draw(box); },
-    }));
-
-    workout.exercises.forEach((e, i) => {
-      list.append(inserter(i));
-      const p = workout.prescription[i] || {};
-      const sets = (e.sets || []).filter((x) => !x.warmup).length;
-      const mark = e.skipped ? 'пропуск' : (sets ? `${sets} из ${p.sets || '—'}` : '');
-      const li = el('li', { className: i === index ? 'now' : (sets || e.skipped ? 'done' : '') });
-      li.append(el('button', {
-        className: 'plan-row',
-        onclick: () => { state.showPlan = false; return goTo(box, i); },
-      },
-      el('span', { className: 'plan-name', textContent: doneName(e) }),
-      el('span', { className: 'plan-dose', textContent: listDose(p, e) }),
-      mark ? el('span', { className: 'plan-mark', textContent: mark }) : null));
-      list.append(li);
-    });
-    list.append(inserter(workout.exercises.length));
-    box.append(list);
-  }
-
-  if (state.insertAt != null) box.append(exercisePicker(box, screenCtx()));
-
   if (ex.note) box.append(el('div', { className: 'wk-note', textContent: ex.note }));
+
+  // Нижняя панель (решение атлета 05.11): главная кнопка и вторая по состоянию.
+  let dockMain = null;
+  let dockAlt = null;
 
   if (ex.skipped) {
     box.append(el('p', { className: 'skipped', textContent: `Пропущено: ${ex.skipReason}` }));
@@ -1055,7 +1064,7 @@ async function draw(box) {
       // Ноль в записях до 29.10 — тот же вес тела.
       const wText = !s.weight ? 'в/т' : fmtWeight(s.weight);
       const text = line || `${wText}${cellMark ? ` ${cellMark}` : ''} × ${setAmount(s)}`
-        + (s.measure != null ? `   ${measureText(presc.measure, s.measure)}` : '')
+        + (s.measure != null ? `   ${measureText(dose.measure, s.measure)}` : '')
         + (s.rpe != null ? `   RPE ${fmtNum(s.rpe, 1)}` : '')
         + (s.rest != null ? `   отдых ${s.restManual ? '~' : ''}${fmtDuration(s.rest)}` : '')
         + (s.transition != null ? `   переход ${s.transitionManual ? '~' : ''}${fmtDuration(s.transition)}` : '')
@@ -1103,7 +1112,6 @@ async function draw(box) {
     if (ex.sets.length) box.append(list);
 
     const cardio = workout.kind === 'cardio';
-    const mode = fillModeOf(workout);
     // Правка записанного: тап по строке подхода подставляет его в форму.
     // Раньше ошибку можно было только удалить и записать заново.
     const editing = state.editSet != null && ex.sets[state.editSet] ? ex.sets[state.editSet] : null;
@@ -1117,12 +1125,12 @@ async function draw(box) {
     // Удержание живёт своим полем, а не повторами: у Ролика в одном упражнении
     // и то, и другое («3×8 + 2×15 с»), и признак стоит у подхода, не у плана.
     // Подход с удержанием (`holdSec` или `hold` в плане, ролик Ц4 и Ц5) — обе цифры сразу.
-    const combined = isHoldSet(presc);
+    const combined = isHoldSet(dose);
     const holds = workout.kind !== 'cardio' && (Boolean(guide && guide.sec) || combined);
     // У замены доза своя (`effectivePresc`): плановые 54,4 кг тяги в жим гири
     // не идут. У варианта снаряда доза плановая, а вес — нет: 13,6 кг
     // кроссовера гантелям не подходят.
-    const own = ex.variant && !ex.replacedWith ? { ...presc, weight: null } : presc;
+    const own = ex.variant && !ex.replacedWith ? { ...dose, weight: null } : dose;
     const d = editing || nextSetDefaults(own, ex.sets, history, { hold: holds });
     // Стопка в фунтах по номеру плиты (Hoist): вводится ячейка, в подход
     // пишутся ячейка и вес по шкале (решение атлета 29.10). Kraft и Хаммер
@@ -1130,13 +1138,13 @@ async function draw(box) {
     const scale = !cardio && machineModel ? MACHINES[machineModel] || null : null;
     const cellOfSet = (s) => (s.cell != null ? s.cell : (cellFor(machineModel, s.weight) || {}).cell ?? null);
     const weightLabel = cardio ? 'минуты'
-      : (scale ? 'ячейка' : (weightPerHand(presc) ? 'вес на руку' : 'вес'));
-    const repsLabel = cardio ? 'км' : (repsPerSide(presc) ? 'повт на сторону' : 'повт');
+      : (scale ? 'ячейка' : (weightPerHand(dose) ? 'вес на руку' : 'вес'));
+    const repsLabel = cardio ? 'км' : (repsPerSide(dose) ? 'повт на сторону' : 'повт');
     // У упражнений с весом тела поле веса пустует и мешает: шаг ±1,25 к нему
     // не относится. Показываем по требованию — жилет и пояс никуда не делись.
     // Число в плане держит поле всегда: 24.09 становую пришлось вносить через
     // жилет, потому что в истории лежала гиперэкстензия без веса.
-    const bodyweight = !scale && bodyweightForm(presc, d, cardio, history);
+    const bodyweight = !scale && bodyweightForm(dose, d, cardio, history);
     // У кардио время и дистанция лежат в minutes/km, а не в weight/reps.
     // Правка забега открывалась с пустыми полями и сохраняла в них null —
     // время и километры стирались, а logCardioFromWorkout разносил нули в день.
@@ -1161,34 +1169,106 @@ async function draw(box) {
       value: d.measure ?? '', className: 'wk-measure',
     }) : null;
     // RPE — у всех силовых, навыкам нет, кардио пишет пульс (`asksRPE`).
-    const rpeOn = asksRPE(presc, ex, workout.kind);
-    const rpeInput = rpeOn ? el('input', {
-      type: 'number', step: cardio ? '1' : '0.5', inputMode: 'decimal',
-      value: cardio ? (d.hr ?? '') : (d.rpe ?? ''), className: 'wk-rpe',
-      // План или прошлое — подсказкой, а не числом: подставленное
-      // сохранялось нетронутым и выдавало план за оценку (решение 29.10).
-      placeholder: !cardio && d.rpeHint != null ? fmtWeight(d.rpeHint) : '',
+    const rpeOn = asksRPE(dose, ex, workout.kind);
+    const hrInput = rpeOn && cardio ? el('input', {
+      type: 'number', step: '1', inputMode: 'decimal', value: d.hr ?? '', className: 'wk-rpe',
     }) : null;
+    // RPE силовых — кнопками, одним касанием без клавиатуры (решение атлета
+    // 05.11). Выбор — состояние экрана: он переживает перерисовку (заметка,
+    // замена) и заводится заново на каждом новом подходе — с прошлого подхода
+    // этой тренировки, а у первого пусто (`nextSetDefaults`, решение 29.10:
+    // подставленное число сохранялось нетронутым и выдавало план за оценку).
+    // План — контуром, а не выбором.
+    const rpeGrid = rpeOn && !cardio;
+    const formKey = `${index}:${state.editSet}:${ex.sets.length}`;
+    if (rpeGrid && state.rpeKey !== formKey) {
+      state.rpeKey = formKey;
+      state.rpePick = d.rpe ?? null;
+    }
+    const rpeBtns = [];
+    const paintRpe = () => {
+      for (const [v, b] of rpeBtns) b.classList.toggle('on', v === state.rpePick);
+    };
+    const outline = rpeGrid ? rpeOutline(dose.rpe) : [];
+    const rpeBlock = rpeGrid ? el('div', { className: 'wk-rpe-grid' },
+      el('span', { className: 'rpe-cap', textContent: 'RPE' }),
+      ...RPE_ROWS.map((row) => el('div', { className: 'rpe-row' }, ...row.map((v) => {
+        const b = el('button', {
+          type: 'button',
+          className: 'rpe-btn' + (outline.includes(v) ? ' plan' : ''),
+          textContent: fmtWeight(v),
+          // Повторное касание выбранной снимает выбор: ошибся — не «перебивай».
+          onclick: () => { state.rpePick = state.rpePick === v ? null : v; paintRpe(); },
+        });
+        rpeBtns.push([v, b]);
+        return b;
+      })))) : null;
+    paintRpe();
     // Пауза подхода: первый подход упражнения несёт переход от прошлого
-    // упражнения, остальные — отдых (решение атлета 26.09). Поле у всех, кроме
-    // кардио: 23.09 его сняли у навыков, но в режиме «сейчас» замер писался всё
-    // равно — и 1–2 секунды отдыха на ролике поправить было нечем.
-    // У контрольных лифтов в режиме «потом» отдых пишется выбором на упражнение,
-    // а не секундами (`restFeelRow`): по памяти цифра не точна.
-    const pause = cardio || (presc.anchor && mode === 'later')
-      ? null : restKind(index, editing ? state.editSet : ex.sets.length);
+    // упражнения, остальные — отдых (решение атлета 26.09). У кардио паузы нет.
+    const pause = cardio ? null : restKind(index, editing ? state.editSet : ex.sets.length);
     const pauseKey = pause === 'transition' ? 'transition' : 'rest';
-    // Отдых руками: в режиме «потом» он единственный источник цифры,
-    // в режиме «сейчас» — способ поправить измеренное.
+    // Поле отдыха — только там, где его нечем измерить (решение атлета 05.11).
+    // Сегодня отдых пишут метки, и ошибочная цифра правится правкой записанного
+    // подхода. У прошлой даты поле — единственный источник цифры, кроме
+    // контрольных лифтов: у них отдых выбором на упражнение (`restFeelRow`),
+    // по памяти секунды не точны.
+    const restField = Boolean(pause) && !(dose.anchor && mode === 'later')
+      && (Boolean(editing) || mode === 'later');
     const restWas = editing && editing[pauseKey] != null ? String(editing[pauseKey]) : '';
-    const restInput = !pause ? null : el('input', {
+    const restInput = !restField ? null : el('input', {
       type: 'number', step: '5', inputMode: 'numeric', className: 'wk-restin',
       value: restWas,
-      // Плейсхолдер живёт в поле с кеглем 34 px: «по секундомеру» не влезало
-      // и обрывалось на середине. Слово короткое, а мелкий кегль ему задан
-      // отдельным правилом — в поле ждут две цифры, а не фразу.
-      placeholder: mode === 'live' ? 'авто' : 'не записан',
+      // Плейсхолдер живёт в поле с кеглем 34 px: длинная фраза обрывалась
+      // на середине. Слово короткое, мелкий кегль ему задан отдельным правилом.
+      placeholder: 'не записан',
     });
+
+    const warmToggle = el('button', {
+      className: 'warm-toggle' + (state.warmup ? ' on' : ''),
+      textContent: 'разминочный',
+      onclick: () => {
+        state.warmup = !state.warmup;
+        warmToggle.classList.toggle('on', state.warmup);
+      },
+    });
+    // При правке тумблер показывает тип правимого подхода, а не прошлый выбор.
+    if (editing) {
+      state.warmup = Boolean(editing.warmup);
+      warmToggle.classList.toggle('on', state.warmup);
+    }
+
+    // Метка контроля — переключателем (решение атлета 26.09). Сама она встаёт
+    // на первый рабочий подход, но 26.09 первый подход подтягиваний облегчён
+    // до 24 кг, и тестом Н4 стал бы он, а не подход с +32. Выключил — метка
+    // ждёт подхода, на котором её включат; в упражнении она одна.
+    if (state.control == null) {
+      state.control = editing ? Boolean(editing.control) : isControlSet(dose, ex.sets, state.warmup);
+    }
+    const ctlToggle = dose.control ? el('button', {
+      className: 'ctl-toggle' + (state.control ? ' on' : ''),
+      textContent: 'контрольный',
+      onclick: () => {
+        state.control = !state.control;
+        ctlToggle.classList.toggle('on', state.control);
+      },
+    }) : null;
+
+    // «До отказа» (решение атлета 29.10) — калибровочный отказ правила 4:
+    // раз в цикл один подход изоляции до истинного отказа. Пишется признаком
+    // `failure` и RPE 10; выключил — возвращается прежний выбор.
+    if (editing) state.failure = Boolean(editing.failure);
+    let rpeBefore = state.rpePick;
+    const failToggle = rpeGrid ? el('button', {
+      className: 'fail-toggle' + (state.failure ? ' on' : ''),
+      textContent: 'до отказа',
+      onclick: () => {
+        state.failure = !state.failure;
+        failToggle.classList.toggle('on', state.failure);
+        if (state.failure) { rpeBefore = state.rpePick; state.rpePick = 10; } else state.rpePick = rpeBefore;
+        paintRpe();
+      },
+    }) : null;
 
     const weightRow = el('label', {}, weightLabel,
       stepper(wInput, -wStep), wInput, stepper(wInput, wStep));
@@ -1200,8 +1280,11 @@ async function draw(box) {
         stepper(sInput, -5), sInput, stepper(sInput, 5)) : null,
       mInput ? el('label', {}, `${ownMeasure.label}, ${ownMeasure.unit}`,
         stepper(mInput, -1), mInput, stepper(mInput, 1)) : null,
-      rpeOn ? el('label', {}, cardio ? 'пульс' : 'RPE',
-        stepper(rpeInput, cardio ? -1 : -0.5), rpeInput, stepper(rpeInput, cardio ? 1 : 0.5)) : null,
+      hrInput ? el('label', {}, 'пульс', stepper(hrInput, -1), hrInput, stepper(hrInput, 1)) : null,
+      // «Разминочный», «до отказа», «контрольный» — над RPE (решение 05.11):
+      // это свойства подхода, который сейчас оцениваешь.
+      el('div', { className: 'wk-actions' }, warmToggle, ctlToggle, failToggle),
+      rpeBlock,
       restInput ? el('label', { className: 'rest-row' },
         pause === 'transition' ? 'переход, с' : 'отдых, с', restInput) : null,
     );
@@ -1279,68 +1362,13 @@ async function draw(box) {
       wInput.addEventListener('input', () => { cellLine.textContent = kgNow(); });
       box.append(cellLine);
     }
-    if (machineModel && guide && guide.machine) {
-      box.append(el('p', {
-        className: 'machine-hint',
-        textContent: `${guide.machine.model}: ${guide.machine.hint}`,
-      }));
-    }
 
-    const warmToggle = el('button', {
-      className: 'warm-toggle' + (state.warmup ? ' on' : ''),
-      textContent: 'разминочный',
-      onclick: () => {
-        state.warmup = !state.warmup;
-        warmToggle.classList.toggle('on', state.warmup);
-      },
-    });
-    // При правке тумблер показывает тип правимого подхода, а не прошлый выбор.
-    if (editing) {
-      state.warmup = Boolean(editing.warmup);
-      warmToggle.classList.toggle('on', state.warmup);
-    }
-
-    // Метка контроля — переключателем (решение атлета 26.09). Сама она встаёт
-    // на первый рабочий подход, но 26.09 первый подход подтягиваний облегчён
-    // до 24 кг, и тестом Н4 стал бы он, а не подход с +32. Выключил — метка
-    // ждёт подхода, на котором её включат; в упражнении она одна.
-    if (state.control == null) {
-      state.control = editing ? Boolean(editing.control) : isControlSet(presc, ex.sets, state.warmup);
-    }
-    const ctlToggle = presc.control ? el('button', {
-      className: 'ctl-toggle' + (state.control ? ' on' : ''),
-      textContent: 'контрольный',
-      onclick: () => {
-        state.control = !state.control;
-        ctlToggle.classList.toggle('on', state.control);
-      },
-    }) : null;
-
-    // «До отказа» (решение атлета 29.10) — калибровочный отказ правила 4:
-    // раз в цикл один подход изоляции до истинного отказа. Пишется признаком
-    // `failure` и RPE 10; выключил — в поле возвращается прежнее число.
-    if (editing) state.failure = Boolean(editing.failure);
-    let rpeBefore = rpeInput ? rpeInput.value : '';
-    const failToggle = rpeOn && !cardio ? el('button', {
-      className: 'fail-toggle' + (state.failure ? ' on' : ''),
-      textContent: 'до отказа',
-      onclick: () => {
-        state.failure = !state.failure;
-        failToggle.classList.toggle('on', state.failure);
-        if (state.failure) { rpeBefore = rpeInput.value; rpeInput.value = '10'; } else rpeInput.value = rpeBefore;
-      },
-    }) : null;
-
-    // План закрыт — лишний подход уходит во вторичный стиль: он стоял на месте
-    // кнопки, по которой только что стучали N раз (решение 29.10).
-    const extra = !editing && planned > 0 && workingSets >= planned;
-    box.append(el('div', { className: 'wk-actions' }, warmToggle, ctlToggle, failToggle, el('button', {
-      className: 'wk-add' + (editing ? ' editing' : (extra ? ' extra' : '')),
-      textContent: editing
-        ? `СОХРАНИТЬ ПОДХОД ${editingPos + 1}`
-        : (workingSets >= planned && planned > 0
-          ? `ЗАПИСАТЬ ЛИШНИЙ ПОДХОД (${workingSets + 1})`
-          : `ЗАПИСАТЬ ПОДХОД ${ex.sets.length + 1}`),
+    // План закрыт — запись уходит во вторую кнопку панели «+ подход»: она стояла
+    // на месте кнопки, по которой только что стучали N раз (решение 29.10),
+    // а главной становится «дальше» (решение атлета 05.11).
+    const closedNow = !editing && exerciseClosed(ex, plan);
+    const recordBtn = el('button', {
+      className: 'wk-add' + (editing ? ' editing' : (closedNow ? ' extra' : '')),
       onclick: async (e) => {
         // Двойной тап писал второй подход: `push` идёт синхронно до `await
         // save`, а кнопка не блокировалась. В журнале это выглядит не ошибкой,
@@ -1371,7 +1399,7 @@ async function draw(box) {
           sec: sInput ? parseNum(sInput.value) : null,
           combined,
         });
-        const control = Boolean(presc.control) && !warmup && Boolean(state.control);
+        const control = Boolean(dose.control) && !warmup && Boolean(state.control);
         const failure = Boolean(failToggle) && Boolean(state.failure) && !warmup;
         // На стопке Hoist в поле — номер ячейки; в базу идут он и вес по шкале.
         let weight = cardio ? null : parseNum(wInput.value);
@@ -1388,13 +1416,13 @@ async function draw(box) {
         const set = cardio ? {
           minutes: parseNum(wInput.value),
           km: parseNum(rInput.value),
-          hr: parseNum(rpeInput.value),
+          hr: parseNum(hrInput.value),
           weight: null,
           reps: null,
           rpe: null,
           rest: null,
           warmup: false,
-          control: Boolean(presc.control),
+          control: Boolean(dose.control),
         } : {
           weight,
           ...(cell != null ? { cell } : {}),
@@ -1405,7 +1433,7 @@ async function draw(box) {
           // Подход с удержанием хранит обе цифры (`setMeasure`).
           reps: measure.reps,
           sec: measure.sec,
-          rpe: failure ? 10 : (rpeOn ? parseNum(rpeInput.value) : null),
+          rpe: failure ? 10 : (rpeGrid ? state.rpePick : null),
           ...(failure ? { failure: true } : {}),
           rest,
           restManual: restManual || undefined,
@@ -1437,7 +1465,7 @@ async function draw(box) {
           // Тронутое поле отдыха при этом слушается в обе стороны — очищенное
           // стирает цифру, иначе ошибочные 900 секунд было не убрать.
           const manualKey = pauseKey === 'transition' ? 'transitionManual' : 'restManual';
-          const restPatch = !restTouched || !pause ? {}
+          const restPatch = !restTouched || !restField ? {}
             : (manual == null
               ? { [pauseKey]: null, [manualKey]: undefined }
               : { [pauseKey]: Math.round(manual), [manualKey]: true });
@@ -1451,7 +1479,7 @@ async function draw(box) {
             ...(failToggle ? { failure: set.failure } : {}),
             ...restPatch,
           };
-          if (presc.control) markControl(ex.sets, i, set.control);
+          if (dose.control) markControl(ex.sets, i, set.control);
           if (!(await save(box))) {
             ex.sets[i] = before;
             // Без перерисовки кнопка осталась бы заблокированной навсегда,
@@ -1476,8 +1504,8 @@ async function draw(box) {
         // Метка последнего подхода живёт в самой записи, а не только в памяти
         // экрана, и пишется до сохранения — иначе она не доедет до базы.
         // Раньше её держал один `state`: экран погас, iOS выгрузил PWA — и
-        // следующий подход уходил в журнал без отдыха, при том что шапка
-        // по-прежнему обещала секундомер. Фактический отдых на якорных лифтах —
+        // следующий подход уходил в журнал без отдыха, при том что экран
+        // по-прежнему обещал мерить. Фактический отдых на якорных лифтах —
         // обязательная строка данных, а дыра была беззвучной.
         const prevLastAt = workout.lastSetAt || null;
         workout.lastSetAt = new Date().toISOString();
@@ -1496,49 +1524,75 @@ async function draw(box) {
         state.lastSetAt = workout.lastSetAt;
         // Отдых закрыт — следующая метка начала подхода ставится заново.
         state.setStartedAt = null;
-        const seconds = presc.rest || 90;
-        state.restPlan = seconds;
         await draw(box);
-        if (mode === 'live') {
-          // Метка ищется на каждом тике: после перерисовки ссылка в замыкании
-          // указывала на оторванный узел, и таймер замирал на экране.
-          startTimer(seconds, (left) => {
-            const label = box.querySelector('.wk-rest');
-            if (!label) return;
-            paintRest(label, left);
-            label.classList.toggle('over', left <= 0);
-          });
-        }
       },
-    })));
+    });
 
-    // «+ ещё N таких» (решение атлета 29.10): в режиме «потом» подходы вносят
-    // по памяти, и одинаковые 4×5 стоили четырёх записей и стрелки. Пишет
-    // копии последнего рабочего (`copiesOfLast`) и уводит на незакрытое.
+    // Подпись главной — то, что уйдёт в базу: «✓ 150 × 5». Следит за полями,
+    // поэтому степпер и чип меняют её на глазах, до касания.
+    const num = (input) => (input ? parseNum(input.value) : null);
+    const show = (v) => (v == null ? '—' : fmtWeight(v));
+    const doseNow = () => {
+      if (cardio) return `${show(num(wInput))} мин · ${show(num(rInput))} км`;
+      const w = num(wInput);
+      const weight = w == null ? '' : (scale ? `яч. ${fmtWeight(w)}` : fmtWeight(w));
+      const r = num(rInput);
+      const sec = num(sInput);
+      const amount = sec != null
+        ? (combined && r != null ? `${r} + ${fmtWeight(sec)} с` : `${fmtWeight(sec)} с`)
+        : (r != null ? fmtWeight(r) : '—');
+      const m = num(mInput);
+      return (weight ? `${weight} × ${amount}` : amount)
+        + (m != null ? ` · ${fmtWeight(m)} ${ownMeasure.unit}` : '');
+    };
+    const paintRecord = () => {
+      recordBtn.textContent = editing ? `сохранить подход ${editingPos + 1}`
+        : (closedNow ? '+ подход' : `✓ ${doseNow()}`);
+    };
+    paintRecord();
+    for (const input of [wInput, rInput, sInput, mInput]) {
+      if (input) input.addEventListener('input', paintRecord);
+    }
+
+    // «+N таких» (решения атлета 29.10 и 05.11): подсобку вносят пачкой,
+    // и одинаковые 4×5 стоили четырёх записей. Пишет копии последнего рабочего
+    // (`copiesOfLast`) без отдыха — их никто не мерил, — но двигает метку
+    // последней записи: переход к следующему упражнению меряется от них.
+    // Автоперехода нет, дальше зовёт панель. При одном оставшемся главная
+    // кнопка делает то же.
     const more = planned - workingSets;
-    if (mode === 'later' && !editing && !cardio && workingSets > 0 && more > 0) {
-      const lastSet = ex.sets.filter((x) => !x.warmup).at(-1);
-      const looks = `${lastSet.weight ? fmtWeight(lastSet.weight) : 'в/т'}×${setAmount(lastSet)}`;
-      box.append(el('button', {
-        className: 'go ghost wk-more',
-        textContent: `+ ещё ${more} ${more === 1 ? 'такой' : 'таких'}: ${looks}`,
-        onclick: async (e) => {
-          const btn = e && e.target;
-          if (btn && btn.disabled) return;
-          if (btn) btn.disabled = true;
-          const copies = copiesOfLast(ex.sets, more);
-          ex.sets.push(...copies);
-          if (!(await save(box))) {
-            ex.sets.splice(ex.sets.length - copies.length, copies.length);
-            if (btn) btn.disabled = false;
-            return;
-          }
-          state.warmup = false;
-          state.control = null;
-          state.failure = false;
-          return advance(box);
-        },
-      }));
+    if (closedNow) {
+      dockMain = nextButton(box);
+      dockAlt = recordBtn;
+    } else {
+      dockMain = recordBtn;
+      if (!editing && !cardio && workingSets > 0 && more >= 2) {
+        dockAlt = el('button', {
+          className: 'wk-more',
+          textContent: `+${more} таких`,
+          onclick: async (e) => {
+            const btn = e && e.target;
+            if (btn && btn.disabled) return;
+            if (btn) btn.disabled = true;
+            const copies = copiesOfLast(ex.sets, more);
+            ex.sets.push(...copies);
+            const prevLastAt = workout.lastSetAt || null;
+            workout.lastSetAt = new Date().toISOString();
+            if (!(await save(box))) {
+              ex.sets.splice(ex.sets.length - copies.length, copies.length);
+              workout.lastSetAt = prevLastAt;
+              if (btn) btn.disabled = false;
+              return;
+            }
+            state.warmup = false;
+            state.control = null;
+            state.failure = false;
+            state.lastSetAt = workout.lastSetAt;
+            state.setStartedAt = null;
+            return draw(box);
+          },
+        });
+      }
     }
 
     if (editing) {
@@ -1552,26 +1606,23 @@ async function draw(box) {
     }
   }
 
-  /*
-   * Счётчик отдыха стоит сразу под кнопкой записи, а не в хвосте экрана.
-   * Своей строкой он был всегда: внутри строки кнопок он забирал ширину под
-   * огромные цифры, и «заметка · замена · пропуск» уезжали вправо за край
-   * ровно в тот момент, когда начинался отдых. Но строка эта лежала ниже
-   * очереди «дальше», то есть на 370 px ниже сгиба, — за главной цифрой
-   * между подходами приходилось скроллить. Теперь она встаёт рядом с кнопкой,
-   * которая её и запускает.
-   *
-   * Место держится и молча: `min-height` не даёт разметке прыгать под пальцем
-   * в момент, когда цифра появляется. Пустота между кнопкой и очередью —
-   * плата за неподвижность строки кнопок, а не недосмотр.
-   */
-  const restBox = el('div', {
-    // Перерисовка на живом таймере (заметка, замена) не должна терять признак
-    // перебора: класс ставится не только тиком, но и самой разметкой.
-    className: 'wk-rest' + (state.restLeft != null && state.restLeft <= 0 ? ' over' : ''),
-  });
-  paintRest(restBox, state.restLeft);
-  box.append(restBox);
+  if (ex.skipped) dockMain = nextButton(box);
+
+  // Круг «раунд через раунд» (решение атлета 05.11): после подхода в круге
+  // вторая кнопка зовёт партнёра одним касанием. Подходы в круге идут через
+  // одного, поэтому копии «+N таких» здесь уступают ему место. Закрытое
+  // упражнение партнёра не зовёт: туда ведёт «дальше», а вторая кнопка
+  // остаётся «+ подход» — иначе лишний подход записать нечем.
+  const partner = !ex.skipped && state.editSet == null && workingSets > 0
+    && !exerciseClosed(ex, workout.prescription[index] || {})
+    ? roundPartner(workout, index) : null;
+  if (partner != null) {
+    dockAlt = el('button', {
+      className: 'wk-partner',
+      textContent: `↔ ${shortName(doneName(workout.exercises[partner])).short}`,
+      onclick: () => goTo(box, partner),
+    });
+  }
 
   // Очередь: три ближайших невзятых упражнения. Видно, сколько осталось,
   // без разворачивания всего плана.
@@ -1620,8 +1671,7 @@ async function draw(box) {
         onclick: async () => {
           const i = insertMoved(workout, index + 1, m);
           if (!(await save(box))) {
-            workout.exercises.splice(i, 1);
-            workout.prescription.splice(i, 1);
+            takePair(workout, i);
             return;
           }
           state.incoming = state.incoming.filter((x) => x !== m);
@@ -1636,9 +1686,11 @@ async function draw(box) {
       el('div', { className: 'group-cap', textContent: 'перенесено сюда' }), card));
   }
 
+  // Под очередью — «весь план ›»: обзор с конструктором и прыжком на любое
+  // упражнение, в том числе закрытое. Стрелки «← →» сняты (решение 05.11).
+  const queue = el('div', { className: 'wk-queue wk-ahead' });
+  queue.append(el('div', { className: 'group-cap', textContent: 'дальше' }));
   if (ahead.length) {
-    const queue = el('div', { className: 'wk-queue' });
-    queue.append(el('div', { className: 'group-cap', textContent: 'дальше' }));
     const card = el('div', { className: 'group-card' });
     for (const a of ahead) {
       card.append(el('button', {
@@ -1650,51 +1702,14 @@ async function draw(box) {
       el('span', { className: 'chev' })));
     }
     queue.append(card);
-    box.append(queue);
   }
+  queue.append(el('button', {
+    className: 'back wk-all', textContent: 'весь план ›',
+    onclick: () => { state.showOverview = true; return draw(box); },
+  }));
+  box.append(queue);
   box.append(addHere);
-
-  if (state.textEdit) box.append(textEditor(box, ex, state.textEdit, plan));
-
-  box.append(el('div', { className: 'wk-nav' },
-    el('button', {
-      textContent: '←', disabled: index === 0,
-      onclick: () => goTo(box, state.index - 1),
-    }),
-    el('button', {
-      className: state.textEdit === 'note' ? 'on' : '',
-      textContent: 'заметка',
-      onclick: () => { state.textEdit = state.textEdit === 'note' ? null : 'note'; return draw(box); },
-    }),
-    el('button', {
-      className: state.textEdit === 'replace' ? 'on' : '',
-      textContent: 'замена',
-      onclick: () => { state.textEdit = state.textEdit === 'replace' ? null : 'replace'; return draw(box); },
-    }),
-    el('button', {
-      className: state.textEdit === 'skip' ? 'on' : '',
-      textContent: 'пропуск',
-      // У бонуса причина всегда одна — «это доп», и спрашивать её — пустой
-      // шаг (решение 23.09). На основных причину читает разбор план-факт.
-      onclick: async () => {
-        if (plan.optional) {
-          ex.skipped = true;
-          ex.skipReason = 'доп';
-          if (!(await save(box))) return;
-          state.textEdit = null;
-          return afterTextEdit(box, 'skip');
-        }
-        state.textEdit = state.textEdit === 'skip' ? null : 'skip';
-        return draw(box);
-      },
-    }),
-    el('button', {
-      textContent: '→',
-      className: ready && !last ? 'ready' : '',
-      disabled: last,
-      onclick: () => goTo(box, state.index + 1),
-    }),
-  ));
+  if (state.insertAt != null) box.append(exercisePicker(box, screenCtx()));
 
   // Вставленное по ошибке убирается, пока под ним нет подходов (п. 14 очереди).
   if (ex.unplanned && !(ex.sets || []).length) {
@@ -1718,23 +1733,18 @@ async function draw(box) {
       className: 'ready-hint',
       textContent: last
         ? `План закрыт: подходов ${workingSets} из ${planned}. Это последний шаг — можно завершать.`
-        : `План закрыт: подходов ${workingSets} из ${planned}. Дальше →`,
+        : `План закрыт: подходов ${workingSets} из ${planned}.`,
     }));
   }
 
-  // Две ссылки ухода стоят рядом и потому нуждаются в контейнере: кнопки
-  // строчные, помещались в одну строку и слипались в «← весь план сессии
-  // и дата← другая сессия» без единого пробела. Раскладка та же, что
-  // у `.day-links` на экране дня, — задача одна, язык один.
+  // Ссылка ухода живёт в своём контейнере, как `.day-links` на экране дня:
+  // строчные кнопки слипались в одну строку без пробела. Весь план — в шапке
+  // и под очередью.
   box.append(el('div', { className: 'wk-links' },
-    el('button', {
-      className: 'back', textContent: '← весь план сессии и дата',
-      onclick: () => { stopTimer(); state.showOverview = true; return draw(box); },
-    }),
     // Вкладкой «Тренировка» это не заменяется. На любую другую вкладку уборка
     // отрабатывает, но тап по своей же вкладке уходом не считается
     // (`main.js`, условие `current !== name`): экран перерисуется в выбор
-    // сессии, не погасив таймер и не дописав растяжку. Ссылка зовёт `leave()`
+    // сессии, не погасив часы и не дописав растяжку. Ссылка зовёт `leave()`
     // явно и потому остаётся единственным безопасным выходом к выбору.
     el('button', {
       className: 'back', textContent: '← другая сессия',
@@ -1763,7 +1773,6 @@ async function draw(box) {
             ? `Удалить черновик? Записанное пропадёт: подходов ${written}.`
             : 'Удалить пустой черновик?');
         if (!confirm(what)) return;
-        stopTimer();
         stopClock();
         if (workout.id != null) {
           try {
@@ -1786,14 +1795,30 @@ async function draw(box) {
     }));
   }
 
-  // Часы идут своим тиком: таймер отдыха работает не всё время, а минуты
-  // тренировки должны считаться и в паузах между подходами.
+  // Нижняя панель над навигацией — в зоне большого пальца (решение атлета
+  // 05.11): запись, копии и «дальше» не уезжают вниз по мере роста списка
+  // подходов. Счётчик отдыха — слева, только у сегодняшней незакрытой сессии;
+  // место держится и пустым, чтобы кнопки не прыгали, когда цифра появится.
+  // Распорка в конце потока не даёт панели закрыть последнюю строку экрана.
+  if (dockMain) {
+    const live = mode === 'live' && workout.status !== 'done';
+    box.append(el('div', { className: 'wk-dock-space' }));
+    box.append(el('div', { className: 'wk-dock' },
+      live ? el('div', { className: 'wk-rest', textContent: restCounter(workout) || '' }) : null,
+      dockMain, dockAlt));
+  }
+
+  // Часы тренировки и счётчик отдыха идут одним тиком и читают метки записи
+  // на каждом тике, а не копят секунды: свёрнутое приложение усыпляет
+  // интервалы, метки не врут.
   stopClock();
-  if (fillModeOf(workout) === 'live' && workout.firstSetAt && workout.status !== 'done') {
+  if (mode === 'live' && workout.firstSetAt && workout.status !== 'done') {
     state.clock = setInterval(() => {
       const label = box.querySelector('.wk-clock');
       if (!label) { stopClock(); return; }
       label.textContent = fmtClock(workoutElapsed(workout));
+      const rest = box.querySelector('.wk-rest');
+      if (rest) rest.textContent = restCounter(workout) || '';
     }, 1000);
     // В браузере метода нет, в Node он держит процесс живым: без этого
     // прогон тестов не завершается вовсе.
@@ -1815,7 +1840,7 @@ export async function render(box, params = {}) {
 
   // Без явного выбора вкладка показывает список, а не молча берёт зал сегодня.
   if (!params.kind) {
-    stopTimer();
+    stopClock();
     state = null;
     await chooser(box, iso);
     return;
@@ -1826,12 +1851,12 @@ export async function render(box, params = {}) {
 
   if (!state || state.workout.date !== date || state.workout.kind !== kind
       || (code && state.workout.dayCode !== code)) {
-    stopTimer();
+    stopClock();
     let workout = await findWorkout(date, kind, code);
     if (!workout) {
       const planNow = await getPlan(date);
       const hit = sessionFor(planNow, date, kind, code);
-      // Запись не заводится, пока не выбран режим: заглянуть в план бесплатно.
+      // Запись не заводится до первого действия: заглянуть в план бесплатно.
       if (hit) workout = makeWorkout(date, hit);
     }
     if (!workout) {
@@ -1900,12 +1925,16 @@ export async function render(box, params = {}) {
     if (own) {
       const missing = bonusToAppend(workout, own.session.exercises);
       if (missing.length) {
-        workout.prescription = [...(workout.prescription || []), ...missing];
-        workout.exercises = [...workout.exercises, ...missing.map((e) => ({
-          name: e.name, planName: e.name, replacedWith: null,
-          skipped: false, skipReason: null, note: '', sets: [],
-        }))];
-        // Незаписанную сессию не создаём этим побочно: её заведёт выбор режима.
+        for (const e of missing) {
+          putPair(workout, workout.exercises.length, {
+            ex: {
+              name: e.name, planName: e.name, replacedWith: null,
+              skipped: false, skipReason: null, note: '', sets: [],
+            },
+            presc: e,
+          });
+        }
+        // Незаписанную сессию не создаём этим побочно: её заведёт первая правка.
         if (workout.id != null) await putWorkout(workout);
       }
     }
@@ -1916,17 +1945,11 @@ export async function render(box, params = {}) {
     const week = weekRaw || { id: isoWeek(date) };
 
     state = {
-      // Отдыха ещё не было — это `null`, а не ноль. Пока разметка проверяла
-      // счётчик на truthiness, ноль читался как «нечего показывать» и место
-      // оставалось пустым само собой. Проверка стала явной (`!= null`), потому
-      // что счёт уходит в минус, — и ноль тут же начал печататься на свежем
-      // экране как «00:00» с признаком перебора: зелёный сигнал «отдых вышел»
-      // до первого подхода.
       // Сессия открывается там, где её бросили. Ноль означал, что вернувшись
       // дописать забытое, ты каждый раз листаешь стрелкой весь день с начала.
-      workout, index: firstOpen(workout), timer: null, clock: null, restLeft: null,
-      paramDate: date, showOverview: false,
-      warmup: false, lastSetAt: workout.lastSetAt || null, guide, showPlan: false,
+      workout, index: firstOpen(workout), clock: null,
+      showOverview: false,
+      warmup: false, lastSetAt: workout.lastSetAt || null, guide, showInfo: false,
       editSet: null, insertAt: null, textEdit: null, setStartedAt: null, control: null,
       debts: debtNames(allWorkouts, date),
       // Сессии плана — для «перенос →», входящие переносы — для очереди.
@@ -1938,6 +1961,11 @@ export async function render(box, params = {}) {
         (w) => w.date === date && w.kind === 'home' && w.status === 'done'),
       extras: extraSteps(stretch),
     };
+  }
+  // «Закрыть как есть» с экрана дня — тем же `finish`, без сверки незакрытого.
+  if (params.close && state.workout.status !== 'done' && state.workout.id != null) {
+    await finish(box, { asIs: true });
+    return;
   }
   await draw(box);
 }

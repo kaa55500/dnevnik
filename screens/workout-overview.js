@@ -12,7 +12,7 @@ import { weekdayShort, isoWeek, dm } from '../lib/dates.js';
 import {
   insertExercise, listDose, doneName, moveExercise, removeExercise,
   restoreRemoved, undoDelete, snapshotOrder, restoreOrder, gestureAxis, swipeVerdict, dropIndex,
-  TRASH_W, settleMoved, undoRemove, draftEdits,
+  TRASH_W, settleMoved, undoRemove, draftEdits, takePair,
 } from './workout-logic.js';
 import { applyMove, swapSessions } from './session-move.js';
 import { navigate } from '../main.js';
@@ -41,16 +41,17 @@ function el(tag, props = {}, ...kids) {
 }
 
 /**
- * Обзор перед заполнением: весь план сессии целиком, ниже развилка режима.
+ * Весь план сессии: список-конструктор, дата тренировки и выход.
  *
- * Режим спрашивается явно, потому что автоопределение уже сломалось: отдых
- * писался, если дата сессии сегодняшняя, а 01.09 атлет внёс сегодняшнюю
- * тренировку целиком после зала — метки времени легли одна к другой,
- * и в журнал ушли «отдыхи» по 1–3 секунды.
+ * До 05.11 здесь стояла развилка «заполняю сейчас / потом», и её обходили:
+ * 20 из 20 сессий в бэкапе 05.11 заведены «потом», хотя вносились в зале.
+ * Теперь режим решает дата (`sessionMode`), а случай 01.09 — сегодняшняя
+ * тренировка, внесённая целиком после зала, — закрывает окно отдыха
+ * `restForSet`: записи пачкой отдыха не получают.
  */
 export async function drawOverview(box, ctx) {
   const {
-    state, draw, goTo, save, stopTimer, persistStretch, weekCrumb, extraSteps,
+    state, draw, goTo, save, persistStretch, weekCrumb, extraSteps,
   } = ctx;
   const { workout } = state;
   const d = workout.date;
@@ -63,17 +64,15 @@ export async function drawOverview(box, ctx) {
     }),
     el('h2', { textContent: workout.title || workout.dayCode })));
 
-  // Начатая сессия открывается отсюда прыжком на нужное упражнение: вернуться
-  // дописать забытое значило пролистать стрелкой весь день. До выбора режима
-  // прыгать некуда — там это просто список.
+  // Сессия открывается отсюда прыжком на нужное упражнение: вернуться
+  // дописать забытое значило пролистать стрелкой весь день.
   //
   // Тот же список — конструктор сессии (решения атлета 05.11): порядок в зале
   // часто расходится с планом, и запись должна показывать, что и в каком
   // порядке сделано. Строка перетаскивается за ручку ≡, свайп влево открывает
-  // корзину для упражнения без подходов. Работает, когда запись заведена: после выбора
-  // режима, а у закрытой тренировки — всегда. До выбора режима план смотрят
-  // бесплатно, и правка создала бы запись побочно.
-  const built = Boolean(workout.fillMode) || workout.status === 'done';
+  // корзину для упражнения без подходов. Работает всегда: правка — намеренное
+  // действие, и незаведённую запись заводит она. Просмотр без действий
+  // записи не заводит.
   // Всё убрано: упражнений нет, и вести «к заполнению» некуда — экран
   // «Пока пусто» строки «убрано» не знает. Обзор остаётся экраном сессии,
   // а сноска с убранным и так внизу.
@@ -260,7 +259,7 @@ export async function drawOverview(box, ctx) {
     handle.addEventListener('pointercancel', (e) => end(e, true));
   };
 
-  const list = el('ol', { className: built ? 'plan-list overview constructor' : 'plan-list overview' });
+  const list = el('ol', { className: 'plan-list overview constructor' });
   workout.exercises.forEach((e, i) => {
     const p = workout.prescription[i] || {};
     const sets = (e.sets || []).filter((x) => !x.warmup).length;
@@ -270,11 +269,6 @@ export async function drawOverview(box, ctx) {
     });
     const name = el('span', { className: 'plan-name', textContent: doneName(e) });
     const mark = e.skipped ? 'пропуск' : (sets ? `${sets} из ${p.sets || '—'}` : '');
-    if (!built) {
-      list.append(el('li', { className: sets || e.skipped ? 'done' : '' },
-        el('div', { className: 'plan-row' }, name, dose)));
-      return;
-    }
     const handle = el('span', { className: 'plan-handle', textContent: '≡' });
     const row = el('button', {
       className: 'plan-row',
@@ -316,43 +310,41 @@ export async function drawOverview(box, ctx) {
       }) : null));
   }
 
-  if (built) {
-    // Новое встаёт в конец, место задаётся перетаскиванием.
-    box.append(el('button', {
-      className: 'insert-here plan-add', textContent: '+ упражнение',
-      onclick: () => { state.insertAt = workout.exercises.length; return draw(box); },
-    }));
-    if (state.insertAt != null) box.append(exercisePicker(box, ctx));
+  // Новое встаёт в конец, место задаётся перетаскиванием.
+  box.append(el('button', {
+    className: 'insert-here plan-add', textContent: '+ упражнение',
+    onclick: () => { state.insertAt = workout.exercises.length; return draw(box); },
+  }));
+  if (state.insertAt != null) box.append(exercisePicker(box, ctx));
 
-    // Убранное плановое — сноской под списком (решения атлета 05.11): свёрнута
-    // в «убрано · N ›», касание раскрывает имена с «вернуть». Когда убрано всё,
-    // раскрыта сразу — возвращать больше неоткуда. Внеплановое удаляется
-    // насовсем и сюда не попадает — вернуть его можно только плашкой.
-    const removed = workout.removed || [];
-    if (removed.length) {
-      const open = state.showRemoved || allRemoved;
-      const note = el('div', { className: 'removed-note' },
-        el('button', {
-          className: 'removed-cap', type: 'button',
-          textContent: `убрано · ${removed.length} ${open ? '⌄' : '›'}`,
-          // Когда убрано всё, сноска раскрыта и сворачивать её некуда.
-          onclick: allRemoved ? null
-            : () => { state.showRemoved = !state.showRemoved; return draw(box); },
-        }));
-      if (open) {
-        for (const r of removed) {
-          note.append(el('button', {
-            className: 'removed-row',
-            onclick: async () => {
-              if (await commit(() => { restoreRemoved(workout, r.ex); })) await draw(box);
-            },
+  // Убранное плановое — сноской под списком (решения атлета 05.11): свёрнута
+  // в «убрано · N ›», касание раскрывает имена с «вернуть». Когда убрано всё,
+  // раскрыта сразу — возвращать больше неоткуда. Внеплановое удаляется
+  // насовсем и сюда не попадает — вернуть его можно только плашкой.
+  const removed = workout.removed || [];
+  if (removed.length) {
+    const open = state.showRemoved || allRemoved;
+    const note = el('div', { className: 'removed-note' },
+      el('button', {
+        className: 'removed-cap', type: 'button',
+        textContent: `убрано · ${removed.length} ${open ? '⌄' : '›'}`,
+        // Когда убрано всё, сноска раскрыта и сворачивать её некуда.
+        onclick: allRemoved ? null
+          : () => { state.showRemoved = !state.showRemoved; return draw(box); },
+      }));
+    if (open) {
+      for (const r of removed) {
+        note.append(el('button', {
+          className: 'removed-row',
+          onclick: async () => {
+            if (await commit(() => { restoreRemoved(workout, r.ex); })) await draw(box);
           },
-          el('span', { className: 'removed-name', textContent: doneName(r.ex) }),
-          el('span', { className: 'removed-go', textContent: 'вернуть' })));
-        }
+        },
+        el('span', { className: 'removed-name', textContent: doneName(r.ex) }),
+        el('span', { className: 'removed-go', textContent: 'вернуть' })));
       }
-      box.append(note);
     }
+    box.append(note);
   }
 
   if (state.stretch) {
@@ -360,52 +352,18 @@ export async function drawOverview(box, ctx) {
       `Хвостом сессии — растяжка, ${state.stretch.positions.length} позиций.` }));
   }
 
-  if (workout.fillMode && !allRemoved) {
+  // К упражнениям — с того места, где бросил (`firstOpen` при открытии);
+  // всё убрано — вести некуда, экран «Пока пусто» строки «убрано» не знает.
+  if (!allRemoved) {
     box.append(el('button', {
       className: 'go',
-      textContent: 'продолжить заполнение →',
+      textContent: workout.id != null ? 'продолжить заполнение →' : 'к упражнениям →',
       onclick: () => { leave(); state.showOverview = false; return draw(box); },
     }));
   }
 
-  box.append(el('div', { className: 'group-cap', textContent: 'как заполняешь' }));
-  const card = el('div', { className: 'group-card' });
-  const pick = (title, hint, mode) => el('button', {
-    className: 'group-row',
-    onclick: async (e) => {
-      // Двойной тап заводил две записи: `id` присваивается только после
-      // `await putWorkout`, и второй вызов уходил с объектом без него.
-      const btn = e && e.target;
-      if (btn && btn.disabled) return;
-      if (btn) btn.disabled = true;
-      workout.fillMode = mode;
-      state.showOverview = false;
-      if (!(await save(box))) return;
-      // Дату могли сменить прямо здесь — тогда экран открывается заново
-      // на новой дате, иначе адрес и запись разъедутся.
-      if (workout.date !== state.paramDate) {
-        const kind = workout.kind;
-        const to = workout.date;
-        stopTimer();
-        ctx.drop();
-        navigate('workout', { date: to, kind, code: workout.dayCode });
-        return;
-      }
-      state.index = 0;
-      await draw(box);
-    },
-  },
-  el('span', { className: 'row-title', textContent: title }),
-  el('span', { className: 'row-value', textContent: hint }),
-  el('span', { className: 'chev' }));
-
-  card.append(pick('Заполняю сейчас', 'секундомер, отдых по меткам', 'live'));
-  card.append(pick('Заполняю потом', 'без секундомера, отдых руками', 'later'));
-  box.append(card);
-
-  // Перенос — это просто другая дата у этой же тренировки. Режим он не
-  // выбирает: можно прийти второго и провести тренировку за первое,
-  // с секундомером и по меткам времени.
+  // Перенос — это просто другая дата у этой же тренировки. Режим по ходу
+  // идёт за датой: перенесённая на сегодня сессия ведётся по меткам времени.
   box.append(el('div', { className: 'group-cap', textContent: 'дата тренировки' }));
   const dateIn = el('input', { type: 'date', value: workout.date, className: 'move-date' });
   dateIn.onchange = async () => {
@@ -445,7 +403,6 @@ export async function drawOverview(box, ctx) {
             const to = workout.date;
             const kind = workout.kind;
             const code = workout.dayCode;
-            stopTimer();
             ctx.drop();
             navigate('workout', { date: to, kind, code });
           },
@@ -468,7 +425,8 @@ export async function drawOverview(box, ctx) {
 
     // Правило переноса одно на оба экрана и живёт в `session-move.js`.
     applyMove(workout, v);
-    if (workout.id != null && !(await save(box))) return;
+    // Смена даты — правка, и незаведённую запись заводит она, как конструктор.
+    if (!(await save(box))) return;
 
     // Состояние, привязанное к дню, пересобирается целиком: блок растяжки,
     // отметки, секунды, неделя и признак домашней сессии были снимком старой
@@ -495,7 +453,7 @@ export async function drawOverview(box, ctx) {
     className: 'hint',
     textContent: workout.movedFrom
       ? `По плану это ${dm(workout.movedFrom)} — плановая дата сохранится в записи.`
-      : 'Поменяй, если делаешь эту тренировку в другой день. Режим выбирается выше.',
+      : 'Поменяй, если делаешь эту тренировку в другой день.',
   }));
 
   // Отмена: заглянул посмотреть — уходишь без следа. Пустой черновик,
@@ -503,7 +461,6 @@ export async function drawOverview(box, ctx) {
   box.append(el('button', {
     className: 'back', textContent: '← не заполняю, просто смотрел',
     onclick: async () => {
-      stopTimer();
       const w = workout;
       const empty = (w.exercises || []).every((e) => !(e.sets || []).length && !e.skipped);
       // Правки конструктора без подходов — тоже работа: молча не удаляются
@@ -550,12 +507,10 @@ export function exercisePicker(box, ctx, { onPick = null, cap = null, exclude = 
     if (onPick) return onPick(name);
     const i = insertExercise(workout, at, name);
     if (!(await save(box))) {
-      workout.exercises.splice(i, 1);
-      workout.prescription.splice(i, 1);
+      takePair(workout, i);
       return;
     }
     state.insertAt = null;
-    state.showPlan = false;
     state.index = i;
     return draw(box);
   };

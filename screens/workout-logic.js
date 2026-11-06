@@ -75,6 +75,22 @@ export function effectivePresc(presc, ex, guide) {
   return out;
 }
 
+/**
+ * Короткое имя для шапки (решение атлета 05.11): до первого « (» или « — ».
+ * Имена плана несут уточнения прямо в себе — «Становая (разминка без лямок,
+ * рабочие с лямками)» занимала в шапке три строки над полями ввода.
+ * Остаток — уточнение, оно показывается под «снаряд, видео». Справочник
+ * и план полей не получают: имя остаётся ключом истории и объёма.
+ */
+export function shortName(name) {
+  const s = String(name ?? '');
+  const m = s.match(/ \(| — /);
+  if (!m || m.index === 0) return { short: s, detail: null };
+  let detail = s.slice(m.index + m[0].length).trim();
+  if (m[0] === ' (' && detail.endsWith(')')) detail = detail.slice(0, -1);
+  return { short: s.slice(0, m.index).trim(), detail: detail || null };
+}
+
 /** Строка плана замены: «вместо Становая: 2 подхода». */
 export function insteadLine(presc) {
   const n = Number(presc.sets) || 0;
@@ -244,7 +260,29 @@ export function asksRPE(presc, ex, kind) {
 }
 
 /**
- * «+ ещё N таких» в режиме «потом» (решение атлета 29.10): копии последнего
+ * RPE кнопками (решение атлета 05.11): два ряда по пять, одно касание вместо
+ * клавиатуры. 5,5 в сетке нет — оценка ниже 6 у силовых редка, а ряд из шести
+ * не помещается в 375 pt. Записанное раньше 5,5 при правке без касания
+ * сохраняется: выбор — состояние экрана, а не значение поля.
+ */
+export const RPE_ROWS = [[5, 6, 6.5, 7, 7.5], [8, 8.5, 9, 9.5, 10]];
+
+/**
+ * Какие кнопки обвести плановым RPE: само число, если оно в сетке, иначе обе
+ * соседние — план 5,5 обводит 5 и 6. Плана нет — контуров нет.
+ */
+export function rpeOutline(plan) {
+  const v = Number(plan);
+  if (plan == null || !Number.isFinite(v)) return [];
+  const grid = RPE_ROWS.flat();
+  if (grid.includes(v)) return [v];
+  const lo = grid.filter((g) => g < v).at(-1);
+  const hi = grid.find((g) => g > v);
+  return [lo, hi].filter((g) => g != null);
+}
+
+/**
+ * «+N таких» (решения атлета 29.10 и 05.11): копии последнего
  * рабочего подхода — вес, повторы, секунды, ячейка. Отдыха и перехода
  * у копий нет: их никто не мерил. RPE не размножается — оценка была одна,
  * и четыре одинаковые цифры выдали бы её за четыре. Метки контроля и отказа
@@ -369,6 +407,45 @@ export function nextOpenAfter(workout, index) {
 }
 
 /**
+ * Куда зовёт «дальше» нижней панели: ближайшее незакрытое после `index`,
+ * а впереди всё закрыто — первое незакрытое сверху. Порядок в зале
+ * расходится с планом: последнее закрыто, второе не тронуто — и поиск
+ * только вперёд (`nextOpenAfter`) сказал бы «некуда». `null` — всё закрыто.
+ */
+export function nextOpen(workout, index) {
+  const ahead = nextOpenAfter(workout, index);
+  if (ahead != null) return ahead;
+  const list = workout.exercises || [];
+  for (let i = 0; i < Math.min(index, list.length); i += 1) {
+    if (!exerciseClosed(list[i], (workout.prescription || [])[i] || {})) return i;
+  }
+  return null;
+}
+
+/**
+ * Партнёр по кругу «раунд через раунд» (решение атлета 05.11): следующий член
+ * того же круга (`round` в строке плана) после текущего, по кольцу, — не
+ * закрытый, не пропущенный и с рабочими подходами не больше, чем у текущего:
+ * тот, кто впереди, подождёт. `null` — круга нет или звать некого.
+ */
+export function roundPartner(workout, index) {
+  const list = workout.exercises || [];
+  const plan = workout.prescription || [];
+  const round = (plan[index] || {}).round;
+  if (!round) return null;
+  const done = (e) => (e.sets || []).filter((s) => !s.warmup).length;
+  const mine = done(list[index] || {});
+  for (let k = 1; k < list.length; k += 1) {
+    const j = (index + k) % list.length;
+    const p = plan[j] || {};
+    if (p.round !== round) continue;
+    if (exerciseClosed(list[j], p) || done(list[j]) > mine) continue;
+    return j;
+  }
+  return null;
+}
+
+/**
  * Форма веса тела: поле веса прячется за кнопку «+ вес (жилет, пояс)».
  * Только когда веса нет ни в подстановке, ни в плане: число в плане держит
  * поле всегда, как бы ни выглядела история. Число здесь — любое: у «5ПМ»
@@ -461,56 +538,63 @@ export function restBetween(prevAtISO, nowMs) {
 }
 
 /**
- * Режим заполнения сессии. Записи, созданные до 01.09, поля не несут —
- * для них считаем `live`: они и заполнялись по ходу.
+ * Режим сессии выводится из даты, а не из выбора (решение атлета 05.11).
+ * Развилка «заполняю сейчас / потом» на входе обходилась: 20 из 20 сессий
+ * в бэкапе 05.11 заведены «потом», хотя вносились в зале по ходу, — и отдых
+ * на якорных лифтах не писался вовсе. Сегодняшняя сессия ведётся по меткам,
+ * прошлая и будущая — «потом», без счётчика. Сохранённое `fillMode`
+ * поведение не решает: его читает только генератор журнала.
  */
-export function fillModeOf(workout) {
-  return (workout && workout.fillMode) === 'later' ? 'later' : 'live';
+export function sessionMode(workout, today) {
+  return workout && workout.date === today ? 'live' : 'later';
 }
+
+/**
+ * Окно правдоподобного отдыха, с. Ввод в зале смешанный (решение атлета
+ * 05.11): тяжёлые подходы пишутся по одному, подсобка — пачкой. Промежуток
+ * между записями короче 20 с — пачка, и «отдых 3 с» хуже пустоты. Длиннее
+ * 15 минут — разрыв: телефон убрали, приложение выгрузили, вернулись после
+ * зала, и «отдых 47 минут» уехал бы в свод как факт.
+ */
+export const REST_MIN = 20;
+export const REST_MAX = 900;
 
 /**
  * Отдых подхода. Метки времени годятся, только когда заполняешь по ходу
  * тренировки: 01.09 сессия вносилась целиком после зала, метки легли одна
- * к другой, и в журнал ушли «отдыхи» по 1–3 секунды. Прежняя защита стояла
- * на `backdated`, то есть на дате, а не на способе заполнения, и этот случай
- * пропустила — день-то был сегодняшний.
+ * к другой, и в журнал ушли «отдыхи» по 1–3 секунды.
  *
  * Введённое руками побеждает измеренное всегда: атлет знает, что делал.
- * Возвращается пара: сама цифра и признак, что она вспомнена, а не измерена.
- * Смешивать их в одном столбце нельзя — через месяц не отличить.
- */
-/**
- * Потолок правдоподобного отдыха между подходами. Сессия идёт 46–62 минуты,
- * и получасовая пауза внутри неё означает не отдых, а разрыв: телефон убрали
- * в карман, приложение выгрузили, вернулись после зала. Такая цифра хуже
- * пустоты — пустое поле видно, а «отдых 47 минут» уедет в свод как факт.
- */
-export const REST_CEILING = 1800;
-
-/**
- * Момент, которым закрывается отдых. До 07.09 им была запись следующего
- * подхода, то есть в «отдых» входило само выполнение: подход на 8 повторов —
- * это ещё 30–40 секунд сверху, и ряд отдыха на якорных лифтах был завышен
- * ровно на длительность подхода.
+ * Возвращается тройка: цифра, признак, что она вспомнена, а не измерена,
+ * и признак меры. Смешивать их в одном столбце нельзя — через месяц не отличить.
  *
- * Теперь отдых закрывает первое касание формы следующего подхода: перед
- * подходом атлет и так лезет выставить вес. Не тронул — пишем прежний
- * интервал, но помечаем его `restToStart: false`, чтобы две меры не слиплись
- * в одном столбце. Ряд Н1–Н3 остаётся несравнимым с последующими; переписывать
- * прошлое нечем — метки начала подхода в тех записях нет.
+ * Окно проверяется на промежутке между записями, а не на самой цифре: касание
+ * формы перед подходом в пачке подсобки правдоподобно, но отдыха там не было.
+ *
+ * Мера внутри окна прежняя. До 07.09 отдых закрывала запись следующего
+ * подхода, то есть в него входило само выполнение — на 30–40 секунд сверху.
+ * Теперь отдых закрывает первое касание формы следующего подхода. Не тронул —
+ * пишем интервал между записями, но без пометки `restToStart`, чтобы две меры
+ * не слиплись в одном столбце.
  */
 export function restForSet({ mode, lastSetAt, now, manual, startedAt }) {
   if (manual != null && Number.isFinite(manual) && manual >= 0) {
     return { rest: Math.round(manual), restManual: true, restToStart: false };
   }
-  if (mode !== 'live') return { rest: null, restManual: false, restToStart: false };
-  const until = startedAt ? Date.parse(startedAt) : (now ?? Date.now());
-  const clean = Boolean(startedAt) && Number.isFinite(until);
-  const rest = restBetween(lastSetAt, clean ? until : (now ?? Date.now()));
-  if (rest != null && rest > REST_CEILING) {
-    return { rest: null, restManual: false, restToStart: false };
+  const none = { rest: null, restManual: false, restToStart: false };
+  if (mode !== 'live') return none;
+  const at = now ?? Date.now();
+  const gap = restBetween(lastSetAt, at);
+  if (gap == null || gap < REST_MIN || gap > REST_MAX) return none;
+  const until = startedAt ? Date.parse(startedAt) : NaN;
+  const toStart = Number.isFinite(until) ? restBetween(lastSetAt, until) : null;
+  // Касание сразу после записи — поправил вес на следующий подход и пошёл
+  // отдыхать — закрыло бы «отдых» за 3 с. Отрезок короче окна мерой не служит:
+  // пишем промежуток между записями, без пометки `restToStart`.
+  if (toStart != null && toStart >= REST_MIN) {
+    return { rest: toStart, restManual: false, restToStart: true };
   }
-  return { rest, restManual: false, restToStart: rest != null && clean };
+  return { rest: gap, restManual: false, restToStart: false };
 }
 
 /**
@@ -524,19 +608,37 @@ export function restForSet({ mode, lastSetAt, now, manual, startedAt }) {
  */
 export function insertExercise(workout, index, name) {
   const at = Math.max(0, Math.min(Number(index) ?? 0, workout.exercises.length));
-  workout.prescription = workout.prescription || [];
-  workout.prescription.splice(at, 0, { name, unplanned: true, sets: 0, reps: '—' });
-  workout.exercises.splice(at, 0, {
-    name, planName: null, replacedWith: null, unplanned: true,
-    skipped: false, skipReason: null, note: '', sets: [],
+  return putPair(workout, at, {
+    ex: {
+      name, planName: null, replacedWith: null, unplanned: true,
+      skipped: false, skipReason: null, note: '', sets: [],
+    },
+    presc: { name, unplanned: true, sets: 0, reps: '—' },
   });
-  return at;
 }
 
 // ---------- Конструктор сессии: порядок и состав (решения атлета 05.11) ----------
 //
 // `exercises` и `prescription` связаны индексом (`prescriptionFor`), поэтому
-// двигаются только вместе и только здесь: экран эти функции лишь вызывает.
+// двигаются только парой и только через `takePair` и `putPair`: парные
+// `splice` по двум массивам расходились на первой же забытой строке,
+// и экран печатал над упражнением чужую дозу.
+
+/** Вынуть пару «упражнение и его доза» с места `at`. */
+export function takePair(workout, at) {
+  workout.prescription = workout.prescription || [];
+  const [ex] = workout.exercises.splice(at, 1);
+  const [presc] = workout.prescription.splice(at, 1);
+  return { ex, presc: presc || {} };
+}
+
+/** Поставить пару на место `at`; возвращает его. */
+export function putPair(workout, at, { ex, presc }) {
+  workout.prescription = workout.prescription || [];
+  workout.exercises.splice(at, 0, ex);
+  workout.prescription.splice(at, 0, presc || {});
+  return at;
+}
 
 const isPlanned = (ex, presc) => !ex.unplanned && !(presc && presc.unplanned);
 
@@ -585,11 +687,9 @@ export function moveExercise(workout, from, to) {
   const list = workout.exercises || [];
   if (from === to || !list[from] || to < 0 || to >= list.length) return false;
   ensurePlanIndex(workout);
-  workout.prescription = workout.prescription || [];
-  const [ex] = list.splice(from, 1);
-  const [presc] = workout.prescription.splice(from, 1);
-  list.splice(to, 0, ex);
-  workout.prescription.splice(to, 0, presc || {});
+  const pair = takePair(workout, from);
+  putPair(workout, to, pair);
+  const { ex } = pair;
   // Перетащенное помечается: в обзоре его строка светится жёлтой полоской
   // (решение атлета 05.11) — видно, что порядок правился руками.
   ex.moved = true;
@@ -631,16 +731,14 @@ export function removeExercise(workout, index) {
   if (sets) return { outcome: 'blocked', sets };
   const presc = (workout.prescription || [])[index] || {};
   if (!isPlanned(ex, presc)) {
-    workout.exercises.splice(index, 1);
-    (workout.prescription || []).splice(index, 1);
+    takePair(workout, index);
     return { outcome: 'deleted', ex, presc, index };
   }
   ensurePlanIndex(workout);
   // Кто светился до уборки — для отмены плашкой: уборка гасит и соседей,
   // ставших на плановое место.
   const lit = workout.exercises.filter((e) => e.moved);
-  workout.exercises.splice(index, 1);
-  (workout.prescription || []).splice(index, 1);
+  takePair(workout, index);
   // Возвращённое из сноски встаёт на плановое место и перетащенным не считается.
   delete ex.moved;
   workout.removed = [...(workout.removed || []), { ex, presc }];
@@ -658,10 +756,7 @@ export function undoRemove(workout, gone) {
   const k = (workout.removed || []).findIndex((r) => r.ex === gone.ex);
   if (k < 0) return null;
   const [{ presc }] = workout.removed.splice(k, 1);
-  const at = Math.min(gone.index, workout.exercises.length);
-  workout.exercises.splice(at, 0, gone.ex);
-  workout.prescription = workout.prescription || [];
-  workout.prescription.splice(at, 0, presc);
+  const at = putPair(workout, Math.min(gone.index, workout.exercises.length), { ex: gone.ex, presc });
   for (const e of gone.lit || []) if (workout.exercises.includes(e)) e.moved = true;
   replanRPE(workout, presc);
   settleMoved(workout);
@@ -699,9 +794,7 @@ export function restoreRemoved(workout, ex) {
   const list = workout.exercises;
   let at = 0;
   list.forEach((e, i) => { if (e.planIndex != null && e.planIndex < ex.planIndex) at = i + 1; });
-  list.splice(at, 0, ex);
-  workout.prescription = workout.prescription || [];
-  workout.prescription.splice(at, 0, presc);
+  putPair(workout, at, { ex, presc });
   replanRPE(workout, presc);
   settleMoved(workout);
   return at;
@@ -709,11 +802,7 @@ export function restoreRemoved(workout, ex) {
 
 /** Отмена удаления внепланового: на прежний индекс. */
 export function undoDelete(workout, gone) {
-  const at = Math.min(gone.index, workout.exercises.length);
-  workout.exercises.splice(at, 0, gone.ex);
-  workout.prescription = workout.prescription || [];
-  workout.prescription.splice(at, 0, gone.presc);
-  return at;
+  return putPair(workout, Math.min(gone.index, workout.exercises.length), gone);
 }
 
 /**

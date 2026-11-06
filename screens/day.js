@@ -9,6 +9,7 @@ import { todayISO, weekdayShort, isoWeek, addDays, dm, fromISO } from '../lib/da
 import { parseNum } from '../lib/format.js';
 import {
   pendingTasks, closedTasks, debts, skipKeyOf, skipScopeOf, SIGNALS, signalsFor, cleanMorning,
+  sessionStart, lastDraft,
 } from './day-logic.js';
 import { makeUnplannedWorkout, KIND_TITLE } from './workout-logic.js';
 import { dayRecord } from './journal-logic.js';
@@ -203,16 +204,6 @@ export async function render(box, params = {}) {
     el('button', { className: 'link', textContent: 'календарь', onclick: () => navigate('calendar', { date }) }),
     el('button', { className: 'link', textContent: 'журнал', onclick: () => navigate('journal') })));
 
-  // Долг по копии данных стоит выше всего остального: на этом экране
-  // собирается день целиком, и терять его нечем, кроме бэкапа.
-  const note = backupNote({
-    lastBackup: settings.lastBackup,
-    hasRecords: Boolean(workouts.length || days.length),
-    today,
-    onOpen: () => navigate('more', { section: 'data' }),
-  });
-  if (note) box.append(note);
-
   if (backdated) {
     box.append(el('div', {
       className: 'badge-back',
@@ -234,6 +225,7 @@ export async function render(box, params = {}) {
   // и сна тянулись в Ц4). Если на сегодня плана нет — границ нет, и долги
   // прошлого цикла остаются видны: иначе в промежутке между циклами блок
   // гас бы молча, и несданное исчезало — не закрытое, а невидимое.
+  let owed = [];
   if (!backdated) {
     const allDates = plans.flatMap((p) => sessionDates(p));
     const current = plans.find((p) => { const r = planRange(p); return r && today >= r.from && today <= r.to; });
@@ -243,51 +235,58 @@ export async function render(box, params = {}) {
     const splitDates = plans.flatMap((p) => p.weeks.flatMap((w) => w.days
       .filter((d) => d.sessions.some((s) => s.kind === 'mobility' && s.measureSplit))
       .map((d) => d.date)));
-    const owed = debts({
+    owed = debts({
       today, dates: [...new Set(allDates)].sort(), splitDates, days, weeks, workouts,
       from: range.from, to: range.to,
     });
-    if (owed.length) {
-      const card = el('section', { className: 'card debts' },
-        el('h2', { textContent: `Не закрыто: ${owed.length}` }));
-      // Заголовок и список обязаны сходиться. Раньше в шапке стояло 13,
-      // а строк показывалось шесть — остальные семь пропадали молча.
-      const HEAD = 3;
-      const row = (o) => el('button', {
-        className: 'debt-row',
-        textContent: `${dm(o.date)} — ${o.title}`,
-        // Черновик открывается сразу сессией: закрыть его — дело одного экрана.
-        // Неделя открывается своими замерами, а не воскресеньем на «Дне».
+  }
+  // Прошлая незакрытая — своей карточкой на сегодняшнем экране, остальные
+  // черновики — в «Не закрыто», как раньше. Дважды она не показывается.
+  const stale = date === today ? lastDraft(workouts, today) : null;
+  if (stale) {
+    owed = owed.filter((o) => !(o.key === 'draft' && o.date === stale.date
+      && o.kind === stale.kind && o.code === stale.dayCode));
+  }
+  const debtsCard = () => {
+    const card = el('section', { className: 'card debts' },
+      el('h2', { textContent: `Не закрыто: ${owed.length}` }));
+    // Заголовок и список обязаны сходиться. Раньше в шапке стояло 13,
+    // а строк показывалось шесть — остальные семь пропадали молча.
+    const HEAD = 3;
+    const row = (o) => el('button', {
+      className: 'debt-row',
+      textContent: `${dm(o.date)} — ${o.title}`,
+      // Черновик открывается сразу сессией: закрыть его — дело одного экрана.
+      // Неделя открывается своими замерами, а не воскресеньем на «Дне».
+      onclick: () => {
+        if (o.key === 'draft') return navigate('workout', { date: o.date, kind: o.kind, code: o.code });
+        if (o.key === 'week') return navigate('more', { section: 'week', week: o.week });
+        return navigate('day', { date: o.date });
+      },
+    });
+    const fresh = [...owed].reverse();
+    for (const o of fresh.slice(0, HEAD)) card.append(row(o));
+    if (fresh.length > HEAD) {
+      const rest = el('div', { className: 'debt-rest' });
+      for (const o of fresh.slice(HEAD)) rest.append(row(o));
+      rest.hidden = true;
+      const more = el('button', {
+        className: 'debt-more',
+        textContent: `ещё ${fresh.length - HEAD} →`,
         onclick: () => {
-          if (o.key === 'draft') return navigate('workout', { date: o.date, kind: o.kind, code: o.code });
-          if (o.key === 'week') return navigate('more', { section: 'week', week: o.week });
-          return navigate('day', { date: o.date });
+          rest.hidden = !rest.hidden;
+          more.textContent = rest.hidden ? `ещё ${fresh.length - HEAD} →` : 'свернуть';
         },
       });
-      const fresh = [...owed].reverse();
-      for (const o of fresh.slice(0, HEAD)) card.append(row(o));
-      if (fresh.length > HEAD) {
-        const rest = el('div', { className: 'debt-rest' });
-        for (const o of fresh.slice(HEAD)) rest.append(row(o));
-        rest.hidden = true;
-        const more = el('button', {
-          className: 'debt-more',
-          textContent: `ещё ${fresh.length - HEAD} →`,
-          onclick: () => {
-            rest.hidden = !rest.hidden;
-            more.textContent = rest.hidden ? `ещё ${fresh.length - HEAD} →` : 'свернуть';
-          },
-        });
-        card.append(rest, more);
-      }
-      box.append(card);
+      card.append(rest, more);
     }
-  }
+    return card;
+  };
 
   // Что уже записано в этот день — иначе закрытый день выглядит пустым
   // и посмотреть, что делал, негде.
   const rec = dayRecord(date, { days, workouts, weeks, plans: plan ? [plan] : [], settings });
-  if (!rec.empty) {
+  const doneCard = () => {
     const card = el('section', { className: 'card done-card' },
       el('h2', { textContent: 'Сделано' }));
     card.append(renderRecord(rec, {
@@ -296,13 +295,10 @@ export async function render(box, params = {}) {
       // должна править себя сама, а не отправлять искать форму заново.
       onEdit: (key) => navigate('day', { date, edit: key }),
     }));
-    box.append(card);
-  }
+    return card;
+  };
 
   const tasks = pendingTasks({ date, today, day, week, sessions, doneKinds, movedAway, settings });
-  if (!tasks.length) {
-    box.append(el('p', { className: 'done-all', textContent: 'Всё закрыто.' }));
-  }
 
   /**
    * Кнопка «не делал». Прочерк — законный ответ: строка закрывается, долг
@@ -402,13 +398,20 @@ export async function render(box, params = {}) {
     }
 
     if (t.key === 'gym' || t.key === 'home' || t.key === 'skill' || t.key === 'cardio') {
-      const session = sessions.find((s) => s.kind === t.key);
+      const session = sessions.find((s) => s.kind === t.key && (s.code || '') === (t.code || ''))
+        || sessions.find((s) => s.kind === t.key);
+      const list = session.exercises || [];
+      const setsPlanned = list.filter((e) => !e.optional)
+        .reduce((n, e) => n + (Number(e.sets) || 0), 0);
+      // Начатая сессия продолжается с того подхода, где бросил (решение 05.11).
+      const draft = workouts.find((w) => w.date === date && (w.kind || 'gym') === t.key
+        && (w.dayCode || '') === (t.code || '') && w.status !== 'done');
       card.append(
         el('p', {
-          textContent: `${session.code} · ${session.exercises.length} упражнений`,
+          textContent: `${session.code} · ${list.length} упражнений · ${setsPlanned} подходов`,
         }),
         el('button', {
-          className: 'go', textContent: 'Начать',
+          className: 'go', textContent: sessionStart(draft),
           onclick: () => navigate('workout', { date, kind: t.key, code: t.code }),
         }),
         // Код дня — из задачи, а не из первой сессии своего вида: на одной
@@ -505,7 +508,90 @@ export async function render(box, params = {}) {
     return card;
   };
 
-  for (const t of tasks) box.append(buildCard(t));
+  // ---------- Тренировка первой (решение атлета 05.11) ----------
+  // Главное действие дня — первая карточка: «Начать» или «Продолжить · подход
+  // k из M». Закрытая сессия — строкой «записана», касание открывает запись.
+  for (const sess of sessions) {
+    if (sess.kind === 'mobility') continue;
+    const t = tasks.find((x) => x.kind === sess.kind && (x.code || '') === (sess.code || ''));
+    if (t) { box.append(buildCard(t)); continue; }
+    const done = workouts.find((w) => w.date === date && w.status === 'done'
+      && (w.kind || 'gym') === sess.kind && (w.dayCode || '') === (sess.code || ''));
+    if (!done) continue;
+    box.append(el('section', { className: 'card session-done' }, el('button', {
+      className: 'group-row',
+      onclick: () => navigate('workout', { date, kind: sess.kind, code: sess.code }),
+    },
+    el('span', { className: 'row-title', textContent: `${sess.code} · ${sess.title || KIND_TITLE[sess.kind]}` }),
+    el('span', { className: 'row-value', textContent: 'записана' }),
+    el('span', { className: 'chev' }))));
+  }
+
+  // Прошлая незакрытая — под карточками тренировки (решение атлета 05.11):
+  // одним касанием открыть или «закрыть как есть». Закрытие идёт через
+  // экран тренировки — там строка груди после В1, кардио в день и бэкап.
+  if (stale) {
+    const n = (stale.exercises || []).reduce(
+      (k, e) => k + (e.sets || []).filter((x) => !x.warmup).length, 0);
+    const open = { date: stale.date, kind: stale.kind || 'gym', code: stale.dayCode };
+    box.append(el('section', { className: 'card draft-old' },
+      el('button', {
+        className: 'group-row', onclick: () => navigate('workout', open),
+      },
+      el('span', {
+        className: 'row-title',
+        textContent: `${weekdayShort(stale.date)} ${dm(stale.date)} ${stale.dayCode || ''} не закрыта`,
+      }),
+      el('span', { className: 'row-value', textContent: `${n} подходов` }),
+      el('span', { className: 'chev' })),
+      el('button', {
+        className: 'go ghost', textContent: 'закрыть как есть',
+        onclick: () => navigate('workout', { ...open, close: true }),
+      })));
+  }
+
+  // Плашка копии — под карточками тренировки, но на первом экране и со своей
+  // кнопкой: на этом экране собирается день целиком, и терять его нечем, кроме
+  // бэкапа. Выше тренировки она стояла до 05.11 — решение атлета «тренировка
+  // первой» её подвинуло, но не свернуло: свёрнутая, она прятала бы защиту базы.
+  const note = backupNote({
+    lastBackup: settings.lastBackup,
+    hasRecords: Boolean(workouts.length || days.length),
+    today,
+    onOpen: () => navigate('more', { section: 'data' }),
+  });
+  if (note) box.append(note);
+
+
+  if (!tasks.length) {
+    box.append(el('p', { className: 'done-all', textContent: 'Всё закрыто.' }));
+  }
+
+  // ---------- Остальное — свёрнутыми строками ----------
+  // Утро, растяжка, вечер, неделя, «Сделано», «Не закрыто» не спорят
+  // с тренировкой: строка с состоянием справа, касание раскрывает нынешнюю
+  // карточку на месте. Раскрытую строку называет параметр `edit` — им же
+  // «Сделано» открывает правку записанного.
+  const rowOf = (key, title, state, body) => {
+    const open = params.edit === key;
+    box.append(el('button', {
+      className: 'day-row' + (open ? ' open' : ''),
+      onclick: () => navigate('day', open ? { date } : { date, edit: key }),
+    },
+    el('span', { className: 'row-title', textContent: title }),
+    el('span', { className: 'row-value', textContent: state }),
+    el('span', { className: 'chev' })));
+    if (open) box.append(body());
+  };
+  const closed = closedTasks({ date, today, day, week, sessions, doneKinds, movedAway, settings });
+  const rows = [...tasks.filter((t) => !t.kind), ...closed];
+  const keyOf = (t) => (t.kind ? skipKeyOf(t) : t.key);
+  for (const t of rows) {
+    const state = t.skipped ? 'не делал' : (t.done ? '✓' : (t.required ? 'не записано' : ''));
+    rowOf(keyOf(t), t.title, state, () => buildCard(t));
+  }
+  if (!rec.empty) rowOf('done', 'Сделано', '', doneCard);
+  if (owed.length) rowOf('debts', `Не закрыто: ${owed.length}`, '', debtsCard);
 
   // Уехавшая сессия не исчезает с плановой даты молча: видно, что она сделана
   // и где именно. Иначе день выглядит так, будто тренировки не было вовсе.
@@ -573,22 +659,6 @@ export async function render(box, params = {}) {
   el('span', { className: 'chev' })));
   extra.append(kinds);
   box.append(extra);
-
-  // Закрытая строка не исчезает насовсем: форма складывается сюда, иначе
-  // ошибку в утреннем весе уже никак не поправить (находка #4).
-  const closed = closedTasks({ date, today, day, week, sessions, doneKinds, movedAway, settings });
-
-  // Строка, по которой тапнули в «Сделано», открывается формой сразу,
-  // а не прячется внутри свёрнутого блока.
-  const wanted = params.edit ? closed.find((t) => t.key === params.edit) : null;
-  if (wanted) box.append(buildCard(wanted));
-
-  if (closed.length) {
-    const det = el('details', { className: 'card edit-closed' });
-    det.append(el('summary', { textContent: `Править записанное · ${closed.length}` }));
-    for (const t of closed) if (t !== wanted) det.append(buildCard(t));
-    box.append(det);
-  }
 }
 
 /** Кардио-сессии дня: тип, минуты, средний пульс, дистанция. */
