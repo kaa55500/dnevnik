@@ -147,10 +147,12 @@ async function save(box) {
   }
 }
 
-function stepper(input, delta) {
+function stepper(input, delta, { bare = false } = {}) {
   return el('button', {
     type: 'button', className: 'step',
-    textContent: (delta > 0 ? '+' : '−') + String(Math.abs(delta)).replace('.', ','),
+    // В острове шаг подписан сверху, на кнопке — только знак.
+    textContent: (delta > 0 ? '+' : '−') + (bare ? '' : String(Math.abs(delta)).replace('.', ',')),
+    ...(bare ? { ariaLabel: `${delta > 0 ? 'плюс' : 'минус'} ${String(Math.abs(delta)).replace('.', ',')}` } : {}),
     onclick: () => {
       const v = (parseNum(input.value) ?? 0) + delta;
       input.value = String(Math.round(v * 100) / 100);
@@ -764,15 +766,16 @@ function nextButton(box) {
   const to = open.length ? (open.find((j) => j > index) ?? open[0])
     : (back != null ? back : nextOpen(workout, index));
   const tail = (extras || []).length ? workout.exercises.length : null;
-  const go = (text, onclick) => el('button', { className: 'wk-next', textContent: text, onclick });
+  // Кнопка встаёт на место ✓ сразу после записи, и второе касание двойного
+  // тапа уводило дальше или закрывало сессию (решения атлета 06.11): первые
+  // `DOUBLE_TAP_MS` после записи она касаний не слышит.
+  const go = (text, act) => el('button', {
+    className: 'wk-next', textContent: text,
+    onclick: () => (Date.now() - (state.recordedAt || 0) < DOUBLE_TAP_MS ? null : act()),
+  });
   if (to != null) return go(`дальше: ${doneName(workout.exercises[to])}`, () => goTo(box, to));
   if (tail != null) return go('к растяжке', () => goTo(box, tail));
-  // «Завершить» встаёт на место ✓ сразу после записи последнего подхода, и
-  // второе касание двойного тапа закрывало сессию (решение атлета 06.11).
-  return go('завершить', () => {
-    if (Date.now() - (state.recordedAt || 0) < DOUBLE_TAP_MS) return;
-    return finish(box);
-  });
+  return go('завершить', () => finish(box));
 }
 
 /**
@@ -816,6 +819,9 @@ function backTo(workout, index) {
   if (!(e.sets || []).some((x) => !x.warmup)) return null;
   return j;
 }
+
+/** Доза плана, которая меряется одними секундами: «удержание 45 с/ст», «макс, с», «5–8 с», «3 мин попыток». */
+const HOLD_ONLY = /^(удержание|макс, с|\d+([–-]\d+)? с\b)|мин попыток/;
 
 /** Окно двойного касания: столько «завершить» не слышит после записи. */
 const DOUBLE_TAP_MS = 600;
@@ -973,7 +979,9 @@ async function draw(box) {
     }),
     el('button', {
       className: 'wk-date',
-      textContent: `${weekdayShort(d)} ${dm(d)}` + (d === todayISO() ? ' · сегодня' : ''),
+      // Идут часы — значит, сегодня: слово уступает место ✕ в той же строке.
+      textContent: `${weekdayShort(d)} ${dm(d)}`
+        + (d === todayISO() && !(workoutElapsed(workout) != null && mode === 'live') ? ' · сегодня' : ''),
       onclick: () => navigate('day', { date: d }),
     }),
     el('span', {
@@ -987,7 +995,14 @@ async function draw(box) {
     // от первого подхода до «сейчас».
     workoutElapsed(workout) != null && mode === 'live'
       ? el('span', { className: 'wk-clock', textContent: fmtClock(workoutElapsed(workout)) })
-      : null));
+      : null,
+    // Выход одним касанием (решение атлета 06.11): открыл посмотреть — уйти,
+    // не листая к «отменить заполнение». Открытие без действий записи не
+    // заводит; начатое остаётся черновиком «Продолжить» на экране дня.
+    el('button', {
+      className: 'wk-close', type: 'button', textContent: '✕', ariaLabel: 'выйти из тренировки',
+      onclick: async () => { await leave(); navigate('day', {}); },
+    })));
 
   // Имя — короткое: уточнения плана («разминка без лямок…») уходят под
   // «снаряд, видео». Под именем одна строка: план и прошлый раз. У варианта
@@ -1338,22 +1353,29 @@ async function draw(box) {
       },
     }) : null;
 
-    // Вес и повторы — двумя островами рядом (решение атлета 06.11, как
-    // в прототипе): оба числа видны одним взглядом и ниже остаётся место RPE.
+    // Поля подхода — островами в сетке по два (решения атлета 06.11, как
+    // в прототипе): подпись и шаг сверху, «− число +» в ряд. Вес и повторы,
+    // удержание, своя мера, пульс — одним видом и видны одним взглядом.
     const island = (cap, input, step) => el('label', { className: 'island' },
-      el('span', { className: 'island-cap', textContent: cap }),
-      stepper(input, -step), input, stepper(input, step));
+      el('span', {
+        className: 'island-cap',
+        textContent: Math.abs(step) === 1 ? cap : `${cap} · шаг ${String(Math.abs(step)).replace('.', ',')}`,
+      }),
+      stepper(input, -step, { bare: true }), input, stepper(input, step, { bare: true }));
+    // Удержание без повторов (стойка, планка, уголок, вис, флажок): план меряет
+    // только секундами, и поле повторов путало (решение атлета 06.11). У ролика
+    // повторы и статика — оба: в его плане повторы.
+    const holdOnly = Boolean(sInput) && !combined && HOLD_ONLY.test(String(dose.reps ?? '').trim());
+    if (holdOnly) rInput.value = '';
     const weightRow = island(weightLabel, wInput, wStep);
     const pair = el('div', { className: 'wk-pair' },
       bodyweight ? null : weightRow,
-      island(repsLabel, rInput, cardio ? 0.1 : 1));
+      holdOnly ? null : island(repsLabel, rInput, cardio ? 0.1 : 1),
+      sInput ? island('удержание, с', sInput, 5) : null,
+      mInput ? island(`${ownMeasure.label}, ${ownMeasure.unit}`, mInput, 1) : null,
+      hrInput ? island('пульс', hrInput, 1) : null);
     const form = el('div', { className: 'wk-form' },
       pair,
-      sInput ? el('label', {}, 'удержание, с',
-        stepper(sInput, -5), sInput, stepper(sInput, 5)) : null,
-      mInput ? el('label', {}, `${ownMeasure.label}, ${ownMeasure.unit}`,
-        stepper(mInput, -1), mInput, stepper(mInput, 1)) : null,
-      hrInput ? el('label', {}, 'пульс', stepper(hrInput, -1), hrInput, stepper(hrInput, 1)) : null,
       // «Разминочный», «до отказа», «контрольный» — над RPE (решение 05.11):
       // это свойства подхода, который сейчас оцениваешь.
       el('div', { className: 'wk-actions' }, warmToggle, ctlToggle, failToggle),
