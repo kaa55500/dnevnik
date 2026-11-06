@@ -18,7 +18,7 @@ import {
   removeExercise, undoDelete, bonusToAppend, effectivePresc, insteadLine, listDose,
   repsPerSide, weightPerHand, fillChips, chipText, asksRPE, copiesOfLast, nextOpenAfter, nextOpen,
   REST_FEEL, SKIP_KINDS, skipAs, moveTargets, incomingMoves, insertMoved, RPE_ROWS, rpeOutline,
-  shortName, roundPartner, takePair, putPair,
+  shortName, roundPartner, roundMates, takePair, putPair, shownExercise,
 } from './workout-logic.js';
 import { MACHINES, cellHint, cellFor, cellKg } from '../lib/machines.js';
 import { sessionSummary } from '../export.js';
@@ -768,6 +768,20 @@ function nextButton(box) {
   });
 }
 
+/**
+ * Строка круга под именем: кто в круге и как он идёт. Без неё «↔» в панели
+ * появлялась без объяснения (замечание атлета 06.11).
+ */
+function roundLine(workout, index, short) {
+  const mates = roundMates(workout, index);
+  if (!mates.length) return null;
+  const names = [short, ...mates.map((j) => shortName(doneName(workout.exercises[j])).short)];
+  return el('div', {
+    className: 'wk-round',
+    textContent: `круг: ${names.join(' ↔ ')} — по подходу каждого, затем отдых`,
+  });
+}
+
 /** Окно двойного касания: столько «завершить» не слышит после записи. */
 const DOUBLE_TAP_MS = 600;
 
@@ -936,8 +950,10 @@ async function draw(box) {
       : null));
 
   // Имя — короткое: уточнения плана («разминка без лямок…») уходят под
-  // «снаряд, видео». Под именем одна строка: план и прошлый раз.
-  const name = shortName(doneName(ex));
+  // «снаряд, видео». Под именем одна строка: план и прошлый раз. У варианта
+  // снаряда имя, эталон и тренажёр — его собственные (`shownExercise`).
+  const shown = shownExercise(ex, state.guide);
+  const { name } = shown;
   const planText = dose.unplanned || ex.unplanned
     // Перенесённое из другой сессии — «вне плана», но со своей плановой дозой.
     ? (dose.movedFrom
@@ -963,6 +979,7 @@ async function draw(box) {
     // Выбор «по плану · дольше · короче» — только у прошлой даты: сегодня
     // отдых якорного лифта меряется метками (решение атлета 05.11).
     dose.anchor && workout.kind !== 'cardio' && mode === 'later' ? restFeelRow(box, ex) : null,
+    roundLine(workout, index, name.short),
   ));
 
   // Строка действий под именем: справочное свёрнуто, заметка, замена и «не делал»
@@ -1009,11 +1026,14 @@ async function draw(box) {
       name.detail ? el('div', { className: 'wk-detail', textContent: name.detail }) : null,
       dose.zone ? el('div', { className: 'wk-zone', textContent: dose.zone }) : null,
       (dose.variants || []).length && !ex.replacedWith ? variantRow(box, ex, dose.variants) : null,
-      machineModel && guide && guide.machine
-        ? el('p', { className: 'machine-hint', textContent: `${guide.machine.model}: ${guide.machine.hint}` })
+      shown.guide && shown.guide.machine && (machineModel || shown.guide !== guide)
+        ? el('p', { className: 'machine-hint', textContent: `${shown.guide.machine.model}: ${shown.guide.machine.hint}` })
         : null,
       dose.plus ? el('div', { className: 'wk-gate', textContent: PLUS_GATE }) : null,
-      etalonBlock(guide)));
+      shown.guide ? etalonBlock(shown.guide)
+        : (ex.variant && !ex.replacedWith
+          ? el('p', { className: 'hint', textContent: 'У этого снаряда своего эталона в справочнике нет.' })
+          : null)));
   }
 
   if (state.textEdit) box.append(textEditor(box, ex, state.textEdit, plan));
@@ -1033,6 +1053,7 @@ async function draw(box) {
   // Нижняя панель (решение атлета 05.11): главная кнопка и вторая по состоянию.
   let dockMain = null;
   let dockAlt = null;
+  let dockMore = null;
 
   if (ex.skipped) {
     box.append(el('p', { className: 'skipped', textContent: `Пропущено: ${ex.skipReason}` }));
@@ -1575,7 +1596,7 @@ async function draw(box) {
     } else {
       dockMain = recordBtn;
       if (!editing && !cardio && workingSets > 0 && more >= 2) {
-        dockAlt = el('button', {
+        dockMore = el('button', {
           className: 'wk-more',
           textContent: `+${more} таких`,
           onclick: async (e) => {
@@ -1618,10 +1639,10 @@ async function draw(box) {
   if (ex.skipped) dockMain = nextButton(box);
 
   // Круг «раунд через раунд» (решение атлета 05.11): после подхода в круге
-  // вторая кнопка зовёт партнёра одним касанием. Подходы в круге идут через
-  // одного, поэтому копии «+N таких» здесь уступают ему место. Закрытое
-  // упражнение партнёра не зовёт: туда ведёт «дальше», а вторая кнопка
-  // остаётся «+ подход» — иначе лишний подход записать нечем.
+  // вторая кнопка зовёт партнёра одним касанием. «+N таких» остаётся рядом
+  // коротким «+N» (замечание атлета 06.11): подсобку круга тоже вносят пачкой
+  // после зала. Закрытое упражнение партнёра не зовёт: туда ведёт «дальше»,
+  // а вторая кнопка остаётся «+ подход» — иначе лишний подход записать нечем.
   const partner = !ex.skipped && state.editSet == null && workingSets > 0
     && !exerciseClosed(ex, workout.prescription[index] || {})
     ? roundPartner(workout, index) : null;
@@ -1631,6 +1652,13 @@ async function draw(box) {
       textContent: `↔ ${shortName(doneName(workout.exercises[partner])).short}`,
       onclick: () => goTo(box, partner),
     });
+    if (dockMore) {
+      dockMore.textContent = dockMore.textContent.replace(/ таких$/, '');
+      dockMore.ariaLabel = `ещё ${planned - workingSets} таких`;
+    }
+  } else if (dockMore) {
+    dockAlt = dockMore;
+    dockMore = null;
   }
 
   // Очередь: три ближайших невзятых упражнения. Видно, сколько осталось,
@@ -1814,7 +1842,7 @@ async function draw(box) {
     box.append(el('div', { className: 'wk-dock-space' }));
     box.append(el('div', { className: 'wk-dock' },
       live ? el('div', { className: 'wk-rest', textContent: restCounter(workout) || '' }) : null,
-      dockMain, dockAlt));
+      dockMain, dockMore, dockAlt));
   }
 
   // Часы тренировки и счётчик отдыха идут одним тиком и читают метки записи

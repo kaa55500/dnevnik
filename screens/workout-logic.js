@@ -119,6 +119,35 @@ export const doneName = (ex) => ex.replacedWith || ex.name;
 export const sameVariant = (ex, variant) => (ex.variant || null) === (variant || null);
 
 /**
+ * Своя запись справочника у варианта снаряда (замечание атлета 06.11): выбрал
+ * «в кроссовере» — имя, эталон и подсказка тренажёра должны быть кроссовера,
+ * а не гантелей. Ключ — плановое имя и подпись варианта: «гантели» у махов
+ * в кроссовере и у другого движения — разные вещи. Вариант без своей записи
+ * эталона не получает вовсе: видео основного снаряда тут ввело бы в заблуждение.
+ */
+export const VARIANT_GUIDE = new Map([
+  ['Вертикальная тяга блока|хаммер сверху-вниз', 'Вертикальная тяга верхнего блока / хаммер сверху-вниз'],
+  ['Махи в стороны в кроссовере|гантели', 'Махи в стороны'],
+  ['Махи в стороны|в кроссовере', 'Махи в стороны в кроссовере'],
+  ['Икры стоя — последний подход частичные внизу|в жиме ногами', 'Икры (toe raise) в жиме ногами Hoist HD1610'],
+]);
+
+/**
+ * Что показывать на экране упражнения: имя и запись справочника того, что
+ * делается сейчас. Без варианта (и у замены) — как было; с вариантом — его
+ * запись, если она есть, иначе «Имя · вариант» без эталона. Пишется в базу
+ * по-прежнему плановое имя: объём и цели считают вариант тем же упражнением.
+ */
+export function shownExercise(ex, guide) {
+  const own = guide.get(doneName(ex)) || null;
+  const variant = ex.variant && !ex.replacedWith ? ex.variant : null;
+  if (!variant) return { name: shortName(doneName(ex)), guide: own };
+  const mapped = VARIANT_GUIDE.get(`${ex.name}|${variant}`);
+  if (mapped && guide.get(mapped)) return { name: shortName(mapped), guide: guide.get(mapped) };
+  return { name: { short: `${shortName(ex.name).short} · ${variant}`, detail: null }, guide: null };
+}
+
+/**
  * Рабочие подходы упражнения за прошлые тренировки, в порядке дат, — источник
  * подстановки и строки «прошлый раз».
  *
@@ -428,6 +457,22 @@ export function nextOpen(workout, index) {
  * закрытый, не пропущенный и с рабочими подходами не больше, чем у текущего:
  * тот, кто впереди, подождёт. `null` — круга нет или звать некого.
  */
+/**
+ * Остальные члены круга «раунд через раунд», в порядке сессии. Пусто — вне
+ * круга. Круг должен быть виден глазами (замечание атлета 06.11): кнопка
+ * «↔» появлялась, но что упражнения идут кругом, не было сказано нигде.
+ */
+export function roundMates(workout, index) {
+  const plan = workout.prescription || [];
+  const round = (plan[index] || {}).round;
+  if (!round) return [];
+  const out = [];
+  plan.forEach((p, j) => {
+    if (j !== index && (p || {}).round === round && !((workout.exercises || [])[j] || {}).skipped) out.push(j);
+  });
+  return out;
+}
+
 export function roundPartner(workout, index) {
   const list = workout.exercises || [];
   const plan = workout.prescription || [];

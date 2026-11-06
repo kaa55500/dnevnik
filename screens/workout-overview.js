@@ -10,7 +10,7 @@ import {
 import { sessionFor } from '../plan.js';
 import { weekdayShort, isoWeek, dm } from '../lib/dates.js';
 import {
-  insertExercise, listDose, doneName, moveExercise, removeExercise,
+  insertExercise, listDose, doneName, moveExercise, removeExercise, roundMates, shortName,
   restoreRemoved, undoDelete, snapshotOrder, restoreOrder, gestureAxis, swipeVerdict, dropIndex,
   TRASH_W, settleMoved, undoRemove, draftEdits, takePair,
 } from './workout-logic.js';
@@ -263,9 +263,11 @@ export async function drawOverview(box, ctx) {
   workout.exercises.forEach((e, i) => {
     const p = workout.prescription[i] || {};
     const sets = (e.sets || []).filter((x) => !x.warmup).length;
+    // Круг виден и в плане: «↔ с партнёром» после дозы (замечание атлета 06.11).
+    const mates = roundMates(workout, i).map((j) => shortName(doneName(workout.exercises[j])).short);
     const dose = el('span', {
       className: 'plan-dose',
-      textContent: listDose(p, e),
+      textContent: listDose(p, e) + (mates.length ? ` · ↔ ${mates.join(', ')}` : ''),
     });
     const name = el('span', { className: 'plan-name', textContent: doneName(e) });
     const mark = e.skipped ? 'пропуск' : (sets ? `${sets} из ${p.sets || '—'}` : '');
