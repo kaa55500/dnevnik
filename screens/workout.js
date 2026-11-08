@@ -186,6 +186,48 @@ async function save(box) {
   }
 }
 
+/**
+ * Касание поля стирает цифру (решение атлета 08.11, как у отдыха в строке):
+ * старая видна серой подсказкой, набрал новую — она и пишется. Пока ничего
+ * не набрано, поле для кода хранит прежнее значение: на iPhone касание кнопки
+ * («сохранить подход», «−/+») фокус с поля не снимает, и запись прочла бы
+ * пустоту вместо веса. Ушёл с поля без ввода — цифра возвращается. Набрал
+ * и стёр до пустого — пусто, как и раньше.
+ */
+function clearOnFocus(input) {
+  let desc = null;
+  for (let o = input; o && !desc; o = Object.getPrototypeOf(o)) {
+    const d = Object.getOwnPropertyDescriptor(o, 'value');
+    if (d) desc = d;
+  }
+  // Без свойства-аксессора (заглушка DOM в тестах) значение хранится как есть.
+  let raw = input.value;
+  const native = desc && desc.get && desc.set;
+  const read = native ? () => desc.get.call(input) : () => raw;
+  const write = native ? (v) => desc.set.call(input, v) : (v) => { raw = v; };
+  let kept = null;
+  const hint = input.placeholder || '';
+  Object.defineProperty(input, 'value', {
+    configurable: true,
+    get: () => (kept != null && read() === '' ? kept : read()),
+    set: (v) => { kept = null; write(v); },
+  });
+  input.addEventListener('focus', () => {
+    const v = read();
+    if (v == null || v === '') return;
+    kept = v;
+    input.placeholder = String(v);
+    write('');
+  });
+  input.addEventListener('input', () => { kept = null; });
+  input.addEventListener('blur', () => {
+    if (kept != null) write(kept);
+    kept = null;
+    input.placeholder = hint;
+  });
+  return input;
+}
+
 function stepper(input, delta, { bare = false } = {}) {
   return el('button', {
     type: 'button', className: 'step',
@@ -1499,7 +1541,7 @@ async function draw(box) {
         className: 'island-cap',
         textContent: Math.abs(step) === 1 ? cap : `${cap} · шаг ${String(Math.abs(step)).replace('.', ',')}`,
       }),
-      stepper(input, -step, { bare: true }), input, stepper(input, step, { bare: true }));
+      stepper(input, -step, { bare: true }), clearOnFocus(input), stepper(input, step, { bare: true }));
     // Удержание без повторов (стойка, планка, уголок, вис, флажок): план меряет
     // только секундами, и поле повторов путало (решение атлета 06.11). У ролика
     // повторы и статика — оба: в его плане повторы.
