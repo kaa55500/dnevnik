@@ -1714,14 +1714,18 @@ ol.wk-sets li.editing { outline: 1px solid var(--accent); border-radius: 8px; }
 }
 .wk-dock .wk-add.editing { background: var(--warn); color: #000; }
 /* Правимая строка (08.11): текст снимает правку, отдых — полем минутами в строке. */
-.set-body.set-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-height: var(--tap); }
+.set-body.set-edit { display: flex; align-items: center; gap: 10px; min-height: var(--tap); }
+/* Одна строка (08.11): «140 × 5   отдых [2:00]». Текст подхода сжимается
+   и переносится внутри себя, поле отдыха не уезжает вниз. */
 .set-edit .set-text {
-  flex: 1 1 auto; min-height: var(--tap); padding: 0;
+  flex: 1 1 0; min-width: 0; min-height: var(--tap); padding: 0;
   background: none; border: 0; text-align: left; color: inherit; font: inherit;
 }
-.set-rest-inline { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
-.set-rest-in {
-  width: 6.5ch; min-height: 40px; padding: 0 8px;
+/* Общее правило «подпись — поле» раскладывает такую метку сеткой с полем
+   до 150 px — в строке подхода это съедало место текста. Здесь — в строку. */
+label.set-rest-inline:has(> input) { flex: none; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+label.set-rest-inline > input.set-rest-in {
+  width: 5.5ch; min-height: 40px; padding: 0 6px;
   border: 1px solid var(--accent); border-radius: 8px;
   background: var(--card-2); color: var(--ink);
   font: 600 var(--t-md) var(--mono); font-variant-numeric: tabular-nums; text-align: center;

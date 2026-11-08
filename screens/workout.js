@@ -1414,7 +1414,26 @@ async function draw(box) {
         type: 'text', inputMode: 'decimal', className: 'set-rest-in',
         value: restWas === '' ? '' : fmtDuration(Number(restWas)), placeholder: 'м:сс',
       });
+      // Касание поля стирает старую цифру (решение атлета 08.11): набрал «2» —
+      // и это 2 минуты, без стирания руками. Старая цифра видна подсказкой;
+      // ушёл с поля, ничего не набрав, — она возвращается и не меняется.
+      // Набрал и стёр до пустого — это «стереть», как и раньше.
+      let shown = inline.value;
+      let typed = false;
+      inline.addEventListener('focus', () => {
+        shown = inline.value;
+        typed = false;
+        inline.placeholder = shown || 'м:сс';
+        inline.value = '';
+      });
+      inline.addEventListener('blur', () => {
+        inline.placeholder = 'м:сс';
+        if (!typed) { inline.value = shown; return; }
+        const v = parseRestInput(inline.value);
+        if (v != null) inline.value = fmtDuration(v);
+      });
       inline.addEventListener('input', () => {
+        typed = true;
         const v = parseRestInput(inline.value);
         if (v !== undefined) restInput.value = v == null ? '' : String(v);
       });
