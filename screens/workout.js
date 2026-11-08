@@ -187,6 +187,50 @@ async function save(box) {
 }
 
 /**
+ * Пока поле открыто касанием и ничего не набрано, следующее касание экрана
+ * только закрывает поле — прежняя цифра остаётся, а кнопка под пальцем не
+ * срабатывает (решение атлета 08.11). Клавиатура сдвигает экран, и касание
+ * «мимо поля» попадало в чип «план» или «прошлый» над полями — они молча
+ * ставили свои вес и повторы. Касание другого поля переводит в него, как
+ * обычно. Набрал цифру — дальше касания работают как всегда.
+ *
+ * iPhone с касания кнопки фокус с поля не снимает, поэтому поле закрывается
+ * на `pointerdown`, а следующий за ним `click` гасится. Касание пустого места
+ * клика не даёт — окно гашения короткое, чтобы не съесть настоящий тап.
+ */
+let openField = null;          // { input, armed: () => bool }
+let swallowClickUntil = 0;
+const SWALLOW_MS = 800;
+
+function installTapGuard() {
+  if (installTapGuard.done) return;
+  if (typeof document === 'undefined' || typeof document.addEventListener !== 'function') return;
+  installTapGuard.done = true;
+  document.addEventListener('pointerdown', (e) => {
+    if (!openField || !openField.armed()) return;
+    const t = e.target;
+    if (t === openField.input || (t && t.tagName === 'INPUT')) return;
+    swallowClickUntil = Date.now() + SWALLOW_MS;
+    const { input } = openField;
+    if (typeof input.blur === 'function') input.blur();
+    else input.dispatchEvent({ type: 'blur' });
+  }, true);
+  document.addEventListener('click', (e) => {
+    if (Date.now() > swallowClickUntil) return;
+    swallowClickUntil = 0;
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
+}
+
+/** Поле открыто: следующее касание экрана, пока `armed()`, только закрывает его. */
+function guardField(input, armed) {
+  installTapGuard();
+  input.addEventListener('focus', () => { openField = { input, armed }; });
+  input.addEventListener('blur', () => { if (openField && openField.input === input) openField = null; });
+}
+
+/**
  * Касание поля стирает цифру (решение атлета 08.11, как у отдыха в строке):
  * старая видна серой подсказкой, набрал новую — она и пишется. Пока ничего
  * не набрано, поле для кода хранит прежнее значение: на iPhone касание кнопки
@@ -225,6 +269,7 @@ function clearOnFocus(input) {
     kept = null;
     input.placeholder = hint;
   });
+  guardField(input, () => kept != null);
   return input;
 }
 
@@ -1474,6 +1519,7 @@ async function draw(box) {
         const v = parseRestInput(inline.value);
         if (v != null) inline.value = fmtDuration(v);
       });
+      guardField(inline, () => !typed);
       inline.addEventListener('input', () => {
         typed = true;
         const v = parseRestInput(inline.value);
