@@ -3,7 +3,7 @@ import { pickPlan, sessionsFor } from '../plan.js';
 import { isoWeek, fromISO } from '../lib/dates.js';
 import { SIGNALS, KIND_RU } from './day-logic.js';
 import { plannedSeconds } from './stretch-block.js';
-import { repsPerSide, weightPerHand, restFeelText } from './workout-logic.js';
+import { repsPerSide, weightPerHand, restFeelText, exerciseTimes } from './workout-logic.js';
 
 const has = (v) => v !== null && v !== undefined;
 const same = (list) => list.every((v) => v === list[0]);
@@ -78,6 +78,19 @@ export function setUnits(ex, presc) {
   const out = [weightPerHand(presc) ? 'кг на руку' : null, repsPerSide(presc) ? 'повторы на сторону' : null]
     .filter(Boolean);
   return out.length ? out.join(' · ') : null;
+}
+
+/**
+ * Строки упражнений сессии со временем (08.11): `time` — «12 мин», «—»,
+ * «круг 14 мин»; у сессии без меток поля нет вовсе.
+ */
+function timedRows(w) {
+  const times = exerciseTimes(w);
+  return (w.exercises || []).map((e, i) => {
+    const row = exerciseRow(e, (w.prescription || [])[i]);
+    if (row && times && times[i]) row.time = times[i];
+    return row;
+  }).filter(Boolean);
 }
 
 /** Строка упражнения для журнала: название плюс свёрнутые группы подходов. */
@@ -257,7 +270,7 @@ export function dayRecord(iso, ctx) {
     movedFrom: w.movedFrom || null,
     avgRPE: w.avgRPE,
     chestSignal: w.chestSignal,
-    rows: (w.exercises || []).map((e, i) => exerciseRow(e, (w.prescription || [])[i])).filter(Boolean),
+    rows: timedRows(w),
   }));
 
   const mob = mobilitySession(iso, day, ctx.plans);

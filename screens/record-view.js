@@ -112,6 +112,8 @@ function exerciseTable(rows) {
     if (ex.unit) table.append(el('div', { className: 'rec-swap', textContent: ex.unit }));
     if (ex.variant) table.append(el('div', { className: 'rec-swap', textContent: `снаряд: ${ex.variant}` }));
     if (ex.restFeel) table.append(el('div', { className: 'rec-swap', textContent: ex.restFeel }));
+    // Время упражнения — тихой серой строкой (08.11): по касанию имени.
+    if (ex.time) table.append(el('div', { className: 'rec-swap rec-time', textContent: `время ${ex.time}` }));
     if (ex.note) table.append(note(ex.note));
   }
   return table;

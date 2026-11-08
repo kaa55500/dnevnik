@@ -11,7 +11,8 @@ import {
 import { backupNote, backupSender, sendDue } from './backup-note.js';
 import {
   nextSetDefaults, planReps, averageRPE, isControlSet, asksChestSignal,
-  sessionMode, restForSet, restBetween, requiredPairs, workoutElapsed, cardioType,
+  sessionMode, restForSet, restStopToggle, restShown, parseRestInput,
+  exerciseClockTap, stopRunningClocks, exerciseClockOn, requiredPairs, workoutElapsed, cardioType,
   prescriptionFor, exerciseClosed, orderedSets, setProgress,
   bodyweightForm, restKind, setMeasure, markControl,
   firstOpen, debtNames, exerciseHistory, doneName, isHoldSet, checkSetInput,
@@ -111,16 +112,54 @@ function stopClock() {
 const modeOf = (workout) => sessionMode(workout, todayISO());
 
 /**
- * Счётчик отдыха — сколько прошло с последней записи (решение атлета 05.11).
- * Он пассивный: считает вверх, без плановой длины, отсчёта и вибрации, и на
- * запись не влияет — отдых в подход пишется по меткам (`restForSet`). Метка
- * лежит в самой записи, поэтому после выгрузки PWA цифра верная. Только
- * у сегодняшней незакрытой сессии: у прошлой мерить нечего.
+ * Счётчик отдыха — сколько прошло с последней записи (решение атлета 05.11),
+ * без плановой длины, отсчёта и вибрации. Касание закрывает отдых (08.11):
+ * цифра замирает, и именно она уходит в следующий подход (`restForSet`).
+ * Обе метки лежат в самой записи, поэтому после выгрузки PWA цифра верная.
+ * Только у сегодняшней незакрытой сессии: у прошлой мерить нечего.
  */
 function restCounter(workout) {
   if (modeOf(workout) !== 'live' || workout.status === 'done') return null;
-  const sec = restBetween(workout.lastSetAt, Date.now());
-  return sec == null ? null : `отдых ${fmtDuration(sec)}`;
+  return restShown(workout, Date.now());
+}
+
+/** Счётчик в нижней панели — кнопка: касание закрывает отдых. */
+function restButton(box, workout) {
+  const node = el('button', { type: 'button', className: 'wk-rest' });
+  node.onclick = () => tapRest(box, node);
+  paintRest(node, workout);
+  return node;
+}
+
+/** Перерисовать счётчик на месте: цифра и признак замера. */
+function paintRest(node, workout) {
+  const shown = restCounter(workout);
+  // Подпись мелко, цифры крупно (08.11): телефон лежит на лавке, и стоя
+  // мелкую цифру не видно. Текстом — по-прежнему «отдых 2:40».
+  node.textContent = '';
+  if (shown) {
+    node.append(el('span', { className: 'wk-rest-cap', textContent: 'отдых ' }),
+      el('span', { className: 'wk-rest-num', textContent: fmtDuration(shown.sec) }));
+  }
+  node.classList.toggle('stopped', Boolean(shown && shown.stopped));
+}
+
+/**
+ * Касание счётчика: стоп — метка в записи, повторное — снять. Касание вне окна
+ * отдыха ничего не делает. Отказ записи откатывает метку, чтобы экран
+ * не показывал замер, которого в базе нет.
+ */
+async function tapRest(box, node) {
+  const { workout } = state;
+  const next = restStopToggle(workout, Date.now());
+  if (next === undefined) return;
+  const before = workout.restStopAt ?? null;
+  workout.restStopAt = next;
+  if (!(await save(box))) {
+    workout.restStopAt = before;
+    return;
+  }
+  paintRest(node, workout);
 }
 
 async function save(box) {
@@ -218,6 +257,8 @@ async function finish(box, { asIs = false } = {}) {
     workout.finishedAt = workout.date < todayISO() && workout.lastSetAt
       ? workout.lastSetAt : new Date().toISOString();
   }
+  // Идущий счёт времени упражнения закрывается концом сессии.
+  stopRunningClocks(workout, workout.finishedAt);
   if (!(await save(box))) return;
   stopClock();
 
@@ -796,7 +837,8 @@ function roundLine(box, workout, index) {
       const closed = exerciseClosed(e, p);
       return el('button', {
         type: 'button',
-        className: 'chip' + (j === index ? ' on' : '') + (closed ? ' closed' : ''),
+        className: 'chip' + (j === index ? ' on' : '') + (closed ? ' closed' : '')
+          + (exerciseClockOn(e) ? ' lit' : ''),
         textContent: `${shortName(doneName(e)).short} ${done}/${p.sets || '—'}`,
         onclick: j === index ? null : () => goTo(box, j),
       });
@@ -826,7 +868,55 @@ const HOLD_ONLY = /^(удержание|макс, с|\d+([–-]\d+)? с\b)|ми�
 /** Окно двойного касания: столько «завершить» не слышит после записи. */
 const DOUBLE_TAP_MS = 600;
 
+/**
+ * Снимок меток времени упражнений; вызов возвращённой функции кладёт их
+ * обратно. Отказ записи откатывает метки, чтобы подсветка и база не разошлись.
+ */
+function clockSnapshot(workout) {
+  const snap = workout.exercises.map((e) => [e.timeStartAt, e.timeStopAt]);
+  return () => workout.exercises.forEach((e, j) => {
+    const [a, z] = snap[j] || [];
+    if (a === undefined) delete e.timeStartAt; else e.timeStartAt = a;
+    if (z === undefined) delete e.timeStopAt; else e.timeStopAt = z;
+  });
+}
+
+/**
+ * Имя упражнения — кнопка счёта его времени (решение атлета 08.11): касание
+ * запускает, горящее — останавливает, ещё раз — продолжает. Только подсветка,
+ * цифр на экране нет: время видно в журнале. Метки пишутся сразу, как подход;
+ * отказ записи откатывает их и экран не перерисовывает: на нём и так прежнее
+ * состояние, а перерисовка стёрла бы плашку «Не сохранено».
+ */
+function nameClock(box, workout, index, text) {
+  return el('button', {
+    type: 'button',
+    className: 'wk-name' + (exerciseClockOn(workout.exercises[index]) ? ' lit' : ''),
+    textContent: text,
+    onclick: async () => {
+      const restore = clockSnapshot(workout);
+      exerciseClockTap(workout, index, new Date().toISOString());
+      if (!(await save(box))) return restore();
+      return draw(box);
+    },
+  });
+}
+
 function goTo(box, index) {
+  // Растяжка — не упражнение: шаг к ней закрывает идущий счёт времени. Стоп
+  // пишется до перехода: отказ записи откатывает метки и оставляет на месте,
+  // с плашкой «Не сохранено», — иначе экран показал бы остановленный счёт,
+  // которого в базе нет.
+  const { workout } = state;
+  if (index >= workout.exercises.length && workout.exercises.some(exerciseClockOn)) {
+    const restore = clockSnapshot(workout);
+    stopRunningClocks(workout, new Date().toISOString());
+    return save(box).then((ok) => (ok ? enter(box, index) : restore()));
+  }
+  return enter(box, index);
+}
+
+function enter(box, index) {
   // Откуда пришёл — для пары «на ходу» (`backTo`): жим лёжа, перешёл на гантели,
   // и обратно — одним касанием, без плана сессии (замечание атлета 06.11).
   // Запоминается само упражнение, а не номер: перестановка в «весь план»
@@ -841,10 +931,9 @@ function goTo(box, index) {
   state.insertAt = null;
   state.textEdit = null;
   state.showInfo = false;
-  // Метка начала подхода принадлежит упражнению, с которого уходишь: иначе
-  // отдых первого подхода на новом упражнении закрылся бы касанием, сделанным
-  // на прошлом, и оказался бы короче настоящего.
-  state.setStartedAt = null;
+  // Остановку отдыха переход не снимает (08.11): таймер один на сессию,
+  // и касание значит «отдых кончился сейчас» — «дальше: B», лёг, тапнул,
+  // и первый подход B получает переход до касания.
   return draw(box);
 }
 
@@ -1015,7 +1104,8 @@ async function draw(box) {
       ? `перенос с ${weekdayShort(dose.movedFrom)} ${dm(dose.movedFrom)} · ${planLine}` : 'вне плана')
     : planLine;
   box.append(el('div', { className: 'wk-head' },
-    el('h2', { textContent: name.short }),
+    el('h2', {}, mode === 'live' && workout.status !== 'done'
+      ? nameClock(box, workout, index, name.short) : name.short),
     el('div', { className: 'wk-line' },
       el('span', { className: 'wk-plan', textContent: planText }),
       el('span', { className: 'wk-sep', textContent: ' · ' }),
@@ -1133,6 +1223,9 @@ async function draw(box) {
     // вносят после рабочих, вспомнив. В базе порядок остаётся хронологическим —
     // на нём стоит расчёт отдыха по меткам времени.
     const ordered = orderedSets(ex.sets);
+    // Место под поле отдыха в строке правимого подхода: само поле встаёт сюда
+    // ниже, когда известно, есть ли у подхода пауза (`restInput`).
+    let restSlot = null;
 
     ordered.forEach(({ s, i }, pos) => {
       const marks = [s.warmup ? 'разм.' : null, s.control ? 'контроль' : null,
@@ -1146,27 +1239,35 @@ async function draw(box) {
       // читается пропуском данных, а не отсутствием отягощения.
       // Ноль в записях до 29.10 — тот же вес тела.
       const wText = !s.weight ? 'в/т' : fmtWeight(s.weight);
-      const text = line || `${wText}${cellMark ? ` ${cellMark}` : ''} × ${setAmount(s)}`
+      const head = `${wText}${cellMark ? ` ${cellMark}` : ''} × ${setAmount(s)}`
         + (s.measure != null ? `   ${measureText(dose.measure, s.measure)}` : '')
-        + (s.rpe != null ? `   RPE ${fmtNum(s.rpe, 1)}` : '')
-        + (s.rest != null ? `   отдых ${s.restManual ? '~' : ''}${fmtDuration(s.rest)}` : '')
-        + (s.transition != null ? `   переход ${s.transitionManual ? '~' : ''}${fmtDuration(s.transition)}` : '')
-        + (marks ? `   ${marks}` : '');
-      const li = el('li', {
-        className: (s.warmup ? 'warm' : '') + (state.editSet === i ? ' editing' : ''),
-      },
-      el('span', { className: 'set-n', textContent: String(pos + 1) }),
+        + (s.rpe != null ? `   RPE ${fmtNum(s.rpe, 1)}` : '');
+      const pausePart = (s.rest != null ? `   отдых ${s.restManual ? '~' : ''}${fmtDuration(s.rest)}` : '')
+        + (s.transition != null ? `   переход ${s.transitionManual ? '~' : ''}${fmtDuration(s.transition)}` : '');
+      const tail = marks ? `   ${marks}` : '';
+      const text = line || head + pausePart + tail;
       // Тап по строке открывает подход на правку: ошибся в весе — поправил,
       // а не удалил и записал заново.
-      el('button', {
-        className: 'set-body', textContent: text,
-        onclick: () => {
-          state.editSet = state.editSet === i ? null : i;
-          state.control = null;
-          if (state.editSet == null) state.warmup = false;
-          return draw(box);
-        },
-      }),
+      const toggle = () => {
+        state.editSet = state.editSet === i ? null : i;
+        state.control = null;
+        if (state.editSet == null) state.warmup = false;
+        return draw(box);
+      };
+      // Правимая строка (08.11): её отдых — полем минутами прямо в строке,
+      // чтобы не листать вниз к полю секунд. Тап по тексту снимает правку.
+      const editingThis = state.editSet === i;
+      if (editingThis && !line) restSlot = el('span', { className: 'set-rest-slot' });
+      const body = editingThis && !line
+        ? el('div', { className: 'set-body set-edit' },
+          el('button', { type: 'button', className: 'set-text', textContent: head + tail, onclick: toggle }),
+          restSlot)
+        : el('button', { className: 'set-body', textContent: text, onclick: toggle });
+      const li = el('li', {
+        className: (s.warmup ? 'warm' : '') + (editingThis ? ' editing' : ''),
+      },
+      el('span', { className: 'set-n', textContent: String(pos + 1) }),
+      body,
         // Ошибся подходом — убрать его должно быть можно на месте,
         // а не «потом поправлю в чате».
         el('button', {
@@ -1306,6 +1407,24 @@ async function draw(box) {
       // на середине. Слово короткое, мелкий кегль ему задан отдельным правилом.
       placeholder: 'не записан',
     });
+    // Поле в строке правимого подхода и поле секунд — одно значение: правится
+    // любое, второе подхватывает. Непонятный ввод минутами секунды не трогает.
+    if (restSlot && restInput) {
+      const inline = el('input', {
+        type: 'text', inputMode: 'decimal', className: 'set-rest-in',
+        value: restWas === '' ? '' : fmtDuration(Number(restWas)), placeholder: 'м:сс',
+      });
+      inline.addEventListener('input', () => {
+        const v = parseRestInput(inline.value);
+        if (v !== undefined) restInput.value = v == null ? '' : String(v);
+      });
+      restInput.addEventListener('input', () => {
+        const v = parseNum(restInput.value);
+        inline.value = v == null ? '' : fmtDuration(v);
+      });
+      restSlot.append(el('label', { className: 'set-rest-inline' },
+        el('span', { textContent: pause === 'transition' ? 'переход' : 'отдых' }), inline));
+    }
 
     const warmToggle = el('button', {
       className: 'warm-toggle' + (state.warmup ? ' on' : ''),
@@ -1393,22 +1512,6 @@ async function draw(box) {
       sInput.addEventListener('input', () => { if (sInput.value !== '') rInput.value = ''; });
     }
 
-    // Отдых закрывается первым касанием формы, а не записью подхода: между
-    // ними лежит сам подход, и раньше он попадал в «отдых» целиком. Метка
-    // ставится один раз и только при заполнении по ходу — правка записанного
-    // задним числом ничего закрывать не должна.
-    if (mode === 'live' && !editing) {
-      const touch = () => {
-        if (state.setStartedAt) return;
-        state.setStartedAt = new Date().toISOString();
-      };
-      for (const sel of ['input', 'button']) {
-        for (const node of form.querySelectorAll(sel)) {
-          node.addEventListener('focus', touch);
-          node.addEventListener('pointerdown', touch);
-        }
-      }
-    }
     // Чипы «план» и «прошлый» (решение атлета 29.10): подстановка берёт план,
     // прошлый раз ставится одним касанием. RPE чип не трогает — это оценка.
     const chips = editing || cardio ? [] : fillChips(own, history, { hold: holds });
@@ -1482,7 +1585,7 @@ async function draw(box) {
         const manual = restTouched ? parseNum(restNow) : null;
         const measured = restForSet({
           mode, lastSetAt: state.lastSetAt, now: Date.now(), manual,
-          startedAt: state.setStartedAt,
+          startedAt: workout.restStopAt || null,
         });
         // У первого упражнения сессии паузы нет вовсе; у первого подхода
         // остальных цифра уходит в переход, а не в отдых.
@@ -1603,11 +1706,15 @@ async function draw(box) {
         // по-прежнему обещал мерить. Фактический отдых на якорных лифтах —
         // обязательная строка данных, а дыра была беззвучной.
         const prevLastAt = workout.lastSetAt || null;
+        const prevStop = workout.restStopAt ?? null;
         workout.lastSetAt = new Date().toISOString();
+        // Отдых закрыт записью — остановка относилась к нему и снимается.
+        workout.restStopAt = null;
         if (!(await save(box))) {
           ex.sets.pop();
           if (!hadFirst) workout.firstSetAt = null;
           workout.lastSetAt = prevLastAt;
+          workout.restStopAt = prevStop;
           if (btn) btn.disabled = false;
           return;
         }
@@ -1618,8 +1725,6 @@ async function draw(box) {
         state.failure = false;
         state.lastSetAt = workout.lastSetAt;
         state.recordedAt = Date.now();
-        // Отдых закрыт — следующая метка начала подхода ставится заново.
-        state.setStartedAt = null;
         await draw(box);
       },
     });
@@ -1673,10 +1778,13 @@ async function draw(box) {
             const copies = copiesOfLast(ex.sets, more);
             ex.sets.push(...copies);
             const prevLastAt = workout.lastSetAt || null;
+            const prevStop = workout.restStopAt ?? null;
             workout.lastSetAt = new Date().toISOString();
+            workout.restStopAt = null;
             if (!(await save(box))) {
               ex.sets.splice(ex.sets.length - copies.length, copies.length);
               workout.lastSetAt = prevLastAt;
+              workout.restStopAt = prevStop;
               if (btn) btn.disabled = false;
               return;
             }
@@ -1685,7 +1793,6 @@ async function draw(box) {
             state.failure = false;
             state.lastSetAt = workout.lastSetAt;
             state.recordedAt = Date.now();
-            state.setStartedAt = null;
             return draw(box);
           },
         });
@@ -1910,7 +2017,7 @@ async function draw(box) {
     const live = mode === 'live' && workout.status !== 'done';
     box.append(el('div', { className: 'wk-dock-space' }));
     box.append(el('div', { className: 'wk-dock' },
-      live ? el('div', { className: 'wk-rest', textContent: restCounter(workout) || '' }) : null,
+      live ? restButton(box, workout) : null,
       dockMain, dockMore, dockAlt));
   }
 
@@ -1924,7 +2031,7 @@ async function draw(box) {
       if (!label) { stopClock(); return; }
       label.textContent = fmtClock(workoutElapsed(workout));
       const rest = box.querySelector('.wk-rest');
-      if (rest) rest.textContent = restCounter(workout) || '';
+      if (rest) paintRest(rest, workout);
     }, 1000);
     // В браузере метода нет, в Node он держит процесс живым: без этого
     // прогон тестов не завершается вовсе.
@@ -2056,7 +2163,7 @@ export async function render(box, params = {}) {
       workout, index: firstOpen(workout), clock: null,
       showOverview: false,
       warmup: false, lastSetAt: workout.lastSetAt || null, guide, showInfo: false,
-      editSet: null, insertAt: null, textEdit: null, setStartedAt: null, control: null,
+      editSet: null, insertAt: null, textEdit: null, control: null,
       debts: debtNames(allWorkouts, date),
       // Сессии плана — для «перенос →», входящие переносы — для очереди.
       sessions: trainingSessions(await listPlans()),
