@@ -2,14 +2,14 @@ import {
   getDay, putDay, getWeek, putWeek, getPlan, getSettings, listWorkouts, putWorkout, findWorkout, listDays, listWeeks,
   listPlans,
 } from '../store.js';
-import { sessionsFor, weekOf, sessionDates, planRange } from '../plan.js';
+import { sessionsFor, sessionFor, pickPlan, weekOf, sessionDates, planRange } from '../plan.js';
 import { plannedSeconds, applySplit } from './stretch-block.js';
 import { CARDIO_TYPES } from './workout-logic.js';
 import { todayISO, weekdayShort, isoWeek, addDays, dm, fromISO } from '../lib/dates.js';
 import { parseNum } from '../lib/format.js';
 import {
   pendingTasks, closedTasks, debts, skipKeyOf, skipScopeOf, SIGNALS, signalsFor, cleanMorning,
-  sessionStart, lastDraft, rowState,
+  sessionStart, lastDraft, rowState, stretchFollowsWorkout,
 } from './day-logic.js';
 import { makeUnplannedWorkout, KIND_TITLE } from './workout-logic.js';
 import { dayRecord } from './journal-logic.js';
@@ -204,6 +204,14 @@ export async function render(box, params = {}) {
     .map((w) => ({
       kind: w.kind || 'gym', code: w.dayCode || '', date: w.date, status: w.status,
     }));
+  // Растяжка едет вместе с тренировкой (09.11): `stretchFollowsWorkout`.
+  sessions.splice(0, sessions.length, ...stretchFollowsWorkout(sessions, {
+    arrived, movedAway, day,
+    mobilityOf: (iso) => {
+      const hit = sessionFor(pickPlan(plans, iso), iso, 'mobility');
+      return hit ? hit.session : null;
+    },
+  }));
 
   // Пометка «задним числом» относится к дню, а не к неделе: у недельной
   // записи своей даты нет, и флаг там ничего не значил бы.

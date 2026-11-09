@@ -122,6 +122,33 @@ export function rowState(task) {
   return task.required ? 'pending' : null;
 }
 
+/**
+ * Растяжка едет вместе с тренировкой (решение атлета 09.11): блок стоит
+ * «в конце тренировки», и перенос сессии на день без плана оставлял его
+ * на плановой дате — в тренировке шага растяжки не было, а на плановом дне
+ * висел долг. Правило:
+ * - у дня без своей растяжки она берётся с плановой даты приехавшей сессии;
+ * - своя растяжка дня побеждает приехавшую: блок на день один;
+ * - плановая дата, с которой уехали все тренировки, растяжку теряет, если
+ *   отметок блока на ней ещё нет (отмеченное не прячем).
+ * `mobilityOf(iso)` — блок растяжки по плану этой даты или `null`.
+ */
+export function stretchFollowsWorkout(sessions, { arrived = [], movedAway = [], day = {}, mobilityOf }) {
+  const away = new Set(movedAway.map((m) => sessionKey(m.kind, m.code)));
+  const gone = (s) => away.has(sessionKey(s.kind, s.code)) || away.has(sessionKey(s.kind, ''));
+  const training = sessions.filter((s) => s.kind !== 'mobility' && !s.movedFrom);
+  const allAway = training.length > 0 && training.every(gone);
+  const marked = Object.keys((day && day.stretch) || {}).length > 0;
+  let out = allAway && !marked ? sessions.filter((s) => s.kind !== 'mobility') : sessions;
+  if (!out.some((s) => s.kind === 'mobility')) {
+    for (const w of arrived) {
+      const mob = w.movedFrom && mobilityOf ? mobilityOf(w.movedFrom) : null;
+      if (mob) { out = [...out, mob]; break; }
+    }
+  }
+  return out;
+}
+
 /** Где живёт отметка «не делал»: у дня или у недели. */
 export function skipScopeOf(key) {
   return ['splitGap', 'waist', 'week'].includes(key) ? 'week' : 'day';

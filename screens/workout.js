@@ -2274,10 +2274,17 @@ export async function render(box, params = {}) {
     // Растяжка живёт в плане отдельной сессией той же даты. Внутри тренировки
     // она становится последним шагом — на телефоне два экрана вместо одного
     // означали, что блок делают «потом», а потом не наступает.
+    // Перенесённая сессия везёт растяжку и бонус с плановой даты (09.11):
+    // перенос на день без плана оставлял тренировку без шага растяжки.
+    // Своя растяжка дня побеждает — то же правило, что на «Дне»
+    // (`stretchFollowsWorkout`).
     const plan = await getPlan(date);
-    const mob = sessionFor(plan, date, 'mobility');
+    const from = workout.movedFrom && workout.movedFrom !== date ? workout.movedFrom : null;
+    const fromPlan = from ? await getPlan(from) : null;
+    const mob = sessionFor(plan, date, 'mobility') || (from ? sessionFor(fromPlan, from, 'mobility') : null);
     const stretch = mob ? mob.session : null;
-    const own = sessionFor(plan, date, kind, workout.dayCode);
+    const own = sessionFor(plan, date, kind, workout.dayCode)
+      || (from ? sessionFor(fromPlan, from, kind, workout.dayCode) : null);
     const bonus = own && own.session.bonus ? own.session.bonus : null;
 
     // Сессия живёт с тем планом, с которым стартовала, — иначе сверка «план
