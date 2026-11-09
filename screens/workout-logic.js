@@ -474,6 +474,27 @@ export function roundMates(workout, index) {
 }
 
 /**
+ * Секундомер над носителем меток: упражнение (`timeStartAt`/`timeStopAt`)
+ * или запись тренировки — растяжка (`stretchStartAt`/`stretchStopAt`).
+ * Продолжение сдвигает старт на длину паузы.
+ */
+function stopwatch(startKey, stopKey) {
+  return {
+    on: (c) => Boolean(c && c[startKey] && !c[stopKey]),
+    stop(c, nowISO) { c[stopKey] = nowISO; },
+    run(c, nowISO) {
+      if (!c[startKey]) { c[startKey] = nowISO; return; }
+      const paused = Date.parse(nowISO) - Date.parse(c[stopKey]);
+      if (paused > 0) c[startKey] = new Date(Date.parse(c[startKey]) + paused).toISOString();
+      delete c[stopKey];
+    },
+  };
+}
+const EXERCISE = stopwatch('timeStartAt', 'timeStopAt');
+const STRETCH = stopwatch('stretchStartAt', 'stretchStopAt');
+const clockRunning = EXERCISE.on;
+
+/**
  * Время упражнения (решение атлета 08.11): касание имени запускает счёт,
  * второе — стоп, третье — продолжить тот же счёт без обнуления. Продолжение —
  * секундомер: старт сдвигается на длину паузы, и время, пока счёт стоял (в
@@ -483,31 +504,45 @@ export function roundMates(workout, index) {
  * один счёт на всех членов: их подходы перемешаны, делить время нечем.
  * Метки лежат на самих упражнениях и переживают перестановку в «весь план».
  */
-const clockRunning = (e) => Boolean(e && e.timeStartAt && !e.timeStopAt);
 
 export function exerciseClockTap(workout, index, nowISO) {
   const list = workout.exercises || [];
   const members = [index, ...roundMates(workout, index)];
   if (clockRunning(list[index])) {
-    for (const j of members) if (clockRunning(list[j])) list[j].timeStopAt = nowISO;
+    for (const j of members) if (clockRunning(list[j])) EXERCISE.stop(list[j], nowISO);
     return;
   }
   list.forEach((e, j) => {
-    if (!members.includes(j) && clockRunning(e)) e.timeStopAt = nowISO;
+    if (!members.includes(j) && clockRunning(e)) EXERCISE.stop(e, nowISO);
   });
-  for (const j of members) {
-    const e = list[j];
-    if (!e) continue;
-    if (!e.timeStartAt) { e.timeStartAt = nowISO; continue; }
-    const paused = Date.parse(nowISO) - Date.parse(e.timeStopAt);
-    if (paused > 0) e.timeStartAt = new Date(Date.parse(e.timeStartAt) + paused).toISOString();
-    delete e.timeStopAt;
-  }
+  if (STRETCH.on(workout)) STRETCH.stop(workout, nowISO);
+  for (const j of members) if (list[j]) EXERCISE.run(list[j], nowISO);
 }
 
-/** «Завершить» и шаг растяжки закрывают идущий счёт. */
+/**
+ * Время растяжки (решение атлета 09.11): касание заголовка «Растяжка» на её
+ * шаге — тот же секундомер, что у имени упражнения, метки — на записи
+ * тренировки. Старт растяжки закрывает идущий счёт упражнения. Шаг к
+ * растяжке её счёт сам не запускает: атлет мог зайти посмотреть позиции.
+ */
+export function stretchClockTap(workout, nowISO) {
+  if (STRETCH.on(workout)) { STRETCH.stop(workout, nowISO); return; }
+  stopExerciseClocks(workout, nowISO);
+  STRETCH.run(workout, nowISO);
+}
+
+/** Идёт ли счёт растяжки — для подсветки заголовка. */
+export const stretchClockOn = STRETCH.on;
+
+/** Шаг к растяжке закрывает идущий счёт упражнения, но не её собственный. */
+export function stopExerciseClocks(workout, nowISO) {
+  for (const e of workout.exercises || []) if (clockRunning(e)) EXERCISE.stop(e, nowISO);
+}
+
+/** «Завершить» закрывает любой идущий счёт. */
 export function stopRunningClocks(workout, nowISO) {
-  for (const e of workout.exercises || []) if (clockRunning(e)) e.timeStopAt = nowISO;
+  stopExerciseClocks(workout, nowISO);
+  if (STRETCH.on(workout)) STRETCH.stop(workout, nowISO);
 }
 
 /** Идёт ли счёт упражнения — для подсветки имени. */
@@ -541,14 +576,26 @@ export function exerciseTimes(workout) {
   return list.map((e, i) => {
     const round = (plan[i] || {}).round || null;
     if (round && carrier.get(round) !== i) return null;
-    const a = Date.parse(e.timeStartAt);
-    const z = Date.parse(e.timeStopAt);
-    const min = (z - a) / 60_000;
-    const ok = workout.fillMode === 'live' && Number.isFinite(min)
-      && min >= EX_TIME_MIN && min <= EX_TIME_MAX;
-    const text = ok ? `${Math.round(min)} мин` : '—';
+    const text = timedText(workout, e.timeStartAt, e.timeStopAt);
     return round ? `круг ${text}` : text;
   });
+}
+
+/** «12 мин» или «—»: одно правило окна и режима на упражнения и растяжку. */
+function timedText(workout, startISO, stopISO) {
+  const min = (Date.parse(stopISO) - Date.parse(startISO)) / 60_000;
+  const ok = workout.fillMode === 'live' && Number.isFinite(min)
+    && min >= EX_TIME_MIN && min <= EX_TIME_MAX;
+  return ok ? `${Math.round(min)} мин` : '—';
+}
+
+/**
+ * Время растяжки сессии (09.11) для журнала и зеркала: «9 мин», «—» или
+ * `null` — счёта не было, строки нет (все сессии до 09.11).
+ */
+export function stretchTime(workout) {
+  if (!workout || !workout.stretchStartAt) return null;
+  return timedText(workout, workout.stretchStartAt, workout.stretchStopAt);
 }
 
 export function roundPartner(workout, index) {
@@ -683,6 +730,15 @@ export const REST_MIN = 20;
 export const REST_MAX = 900;
 
 /**
+ * Дорога к снаряду, с (решение атлета 09.11). Касание счётчика значит «иду на
+ * подход», и отдых закрывается не в момент касания, а на 15 с позже: атлет
+ * ждал плановую цифру, касался и только потом шёл, и дорога выпадала из ряда.
+ * Одно число на все упражнения: разница дороги между снарядами меньше ошибки
+ * самого касания. С 09.11 записанный отдых включает дорогу.
+ */
+export const REST_WALK = 15;
+
+/**
  * Отдых подхода. Метки времени годятся, только когда заполняешь по ходу
  * тренировки: 01.09 сессия вносилась целиком после зала, метки легли одна
  * к другой, и в журнал ушли «отдыхи» по 1–3 секунды.
@@ -697,7 +753,8 @@ export const REST_MAX = 900;
  * Мера внутри окна прежняя. До 07.09 отдых закрывала запись следующего
  * подхода, то есть в него входило само выполнение — на 30–40 секунд сверху.
  * С 06.11 отдых закрывало первое касание формы, с 08.11 — касание счётчика
- * отдыха (`startedAt` = `restStopAt`). Не коснулся — пишем интервал между
+ * отдыха (`startedAt` = `restStopAt`), с 09.11 — касание плюс дорога
+ * (`REST_WALK`). Не коснулся — пишем интервал между
  * записями, но без пометки `restToStart`, чтобы две меры не слиплись в одном
  * столбце. Замер касанием в окне пишется, даже если сам подход записан позже
  * верхней границы окна: отдых уже измерен, запоздала только запись.
@@ -709,7 +766,9 @@ export function restForSet({ mode, lastSetAt, now, manual, startedAt }) {
   const none = { rest: null, restManual: false, restToStart: false };
   if (mode !== 'live') return none;
   const at = now ?? Date.now();
-  const until = startedAt ? Date.parse(startedAt) : NaN;
+  // Конец отдыха — касание плюс дорога, и метка может лежать в будущем:
+  // подход, записанный раньше конца дороги, обрезает отдых своей записью.
+  const until = startedAt ? Math.min(Date.parse(startedAt), at) : NaN;
   const toStart = Number.isFinite(until) ? restBetween(lastSetAt, until) : null;
   // Касание сразу после записи закрыло бы «отдых» за 3 с. Отрезок вне окна
   // мерой не служит: пишем промежуток между записями, без пометки `restToStart`.
@@ -726,16 +785,19 @@ export function restForSet({ mode, lastSetAt, now, manual, startedAt }) {
  * а не форма. Перед подходом форму не трогают — цифры уже стоят, — а
  * поправленный посреди отдыха вес обрезал его на первой минуте.
  *
- * Возвращает новое значение `restStopAt`: метку касания, `null` — повторное
- * касание сняло остановку, `undefined` — касание ничего не меняет. Вне окна
- * отдыха остановка бессмысленна: `restForSet` такую цифру всё равно не запишет,
- * а замороженный счётчик обещал бы её.
+ * Возвращает новое значение `restStopAt`: конец отдыха — касание плюс дорога
+ * (`REST_WALK`), `null` — повторное касание сняло «иду на подход» (и пока
+ * идёт дорога, и после замера), `undefined` — касание ничего не меняет. Окно
+ * проверяется на момент касания: вне его остановка бессмысленна, `restForSet`
+ * такую цифру всё равно не запишет, а замороженный счётчик обещал бы её.
+ * Касание у самой верхней границы даст метку за ней — `restForSet` её
+ * отбросит, как и любой отдых длиннее 15 минут.
  */
 export function restStopToggle(workout, now) {
   if (workout.restStopAt) return null;
   const gap = restBetween(workout.lastSetAt, now);
   if (gap == null || gap < REST_MIN || gap > REST_MAX) return undefined;
-  return new Date(now).toISOString();
+  return new Date(now + REST_WALK * 1000).toISOString();
 }
 
 /**
@@ -761,12 +823,18 @@ export function parseRestInput(raw) {
   return undefined;
 }
 
-/** Что показывает счётчик: секунды от последней записи и признак замера. */
+/**
+ * Что показывает счётчик: секунды от последней записи, признак замера и
+ * признак дороги. Метка конца отдыха в будущем — дорога идёт, цифра тикает
+ * до «сейчас»; в прошлом — замер на метке.
+ */
 export function restShown(workout, now) {
   const stop = workout.restStopAt ? Date.parse(workout.restStopAt) : NaN;
-  const stopped = Number.isFinite(stop);
+  const marked = Number.isFinite(stop);
+  const walking = marked && stop > now;
+  const stopped = marked && !walking;
   const sec = restBetween(workout.lastSetAt, stopped ? stop : now);
-  return sec == null ? null : { sec, stopped };
+  return sec == null ? null : { sec, stopped, walking };
 }
 
 /**

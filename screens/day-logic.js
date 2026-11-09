@@ -110,6 +110,18 @@ export function skipKeyOf(task) {
   return task.kind ? sessionKey(task.kind, task.code) : task.key;
 }
 
+/**
+ * Состояние строки «Дня» для значка (решение атлета 09.11): `done` —
+ * сделано, `skipped` — «не делал» (побеждает, даже если строка закрыта),
+ * `pending` — обязательная незакрытая, `null` — значка нет: необязательная
+ * незакрытая (вечер) долгом не считается.
+ */
+export function rowState(task) {
+  if (task.skipped) return 'skipped';
+  if (task.done) return 'done';
+  return task.required ? 'pending' : null;
+}
+
 /** Где живёт отметка «не делал»: у дня или у недели. */
 export function skipScopeOf(key) {
   return ['splitGap', 'waist', 'week'].includes(key) ? 'week' : 'day';

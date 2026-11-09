@@ -12,7 +12,7 @@ import { backupNote, backupSender, sendDue } from './backup-note.js';
 import {
   nextSetDefaults, planReps, averageRPE, isControlSet, asksChestSignal,
   sessionMode, restForSet, restStopToggle, restShown, parseRestInput,
-  exerciseClockTap, stopRunningClocks, exerciseClockOn, requiredPairs, workoutElapsed, cardioType,
+  exerciseClockTap, stopRunningClocks, exerciseClockOn, stretchClockTap, stretchClockOn, stopExerciseClocks, requiredPairs, workoutElapsed, cardioType,
   prescriptionFor, exerciseClosed, orderedSets, setProgress,
   bodyweightForm, restKind, setMeasure, markControl,
   firstOpen, debtNames, exerciseHistory, doneName, isHoldSet, checkSetInput,
@@ -114,7 +114,8 @@ const modeOf = (workout) => sessionMode(workout, todayISO());
 /**
  * Счётчик отдыха — сколько прошло с последней записи (решение атлета 05.11),
  * без плановой длины, отсчёта и вибрации. Касание закрывает отдых (08.11):
- * цифра замирает, и именно она уходит в следующий подход (`restForSet`).
+ * с 09.11 — «иду на подход», цифра идёт ещё 15 с дороги и замирает, и именно
+ * она уходит в следующий подход (`restForSet`).
  * Обе метки лежат в самой записи, поэтому после выгрузки PWA цифра верная.
  * Только у сегодняшней незакрытой сессии: у прошлой мерить нечего.
  */
@@ -136,12 +137,15 @@ function paintRest(node, workout) {
   const shown = restCounter(workout);
   // Подпись мелко, цифры крупно (08.11): телефон лежит на лавке, и стоя
   // мелкую цифру не видно. Текстом — по-прежнему «отдых 2:40».
+  // Дорога к снаряду (09.11) — своей подписью «→ подход»: 15 с после касания
+  // счётчик ещё идёт, потом замирает сам на следующем тике.
   node.textContent = '';
   if (shown) {
-    node.append(el('span', { className: 'wk-rest-cap', textContent: 'отдых ' }),
+    node.append(el('span', { className: 'wk-rest-cap', textContent: shown.walking ? '→ подход ' : 'отдых ' }),
       el('span', { className: 'wk-rest-num', textContent: fmtDuration(shown.sec) }));
   }
   node.classList.toggle('stopped', Boolean(shown && shown.stopped));
+  node.classList.toggle('walking', Boolean(shown && shown.walking));
 }
 
 /**
@@ -960,12 +964,18 @@ const DOUBLE_TAP_MS = 600;
  * обратно. Отказ записи откатывает метки, чтобы подсветка и база не разошлись.
  */
 function clockSnapshot(workout) {
+  const put = (c, key, v) => { if (v === undefined) delete c[key]; else c[key] = v; };
   const snap = workout.exercises.map((e) => [e.timeStartAt, e.timeStopAt]);
-  return () => workout.exercises.forEach((e, j) => {
-    const [a, z] = snap[j] || [];
-    if (a === undefined) delete e.timeStartAt; else e.timeStartAt = a;
-    if (z === undefined) delete e.timeStopAt; else e.timeStopAt = z;
-  });
+  const stretch = [workout.stretchStartAt, workout.stretchStopAt];
+  return () => {
+    workout.exercises.forEach((e, j) => {
+      const [a, z] = snap[j] || [];
+      put(e, 'timeStartAt', a);
+      put(e, 'timeStopAt', z);
+    });
+    put(workout, 'stretchStartAt', stretch[0]);
+    put(workout, 'stretchStopAt', stretch[1]);
+  };
 }
 
 /**
@@ -989,15 +999,34 @@ function nameClock(box, workout, index, text) {
   });
 }
 
+/**
+ * Заголовок «Растяжка» — кнопка её счёта (решение атлета 09.11), так же, как
+ * имя упражнения: подсветка, цифр нет, отказ записи откатывает метки.
+ */
+function stretchClock(box, workout, text) {
+  return el('button', {
+    type: 'button',
+    className: 'wk-name' + (stretchClockOn(workout) ? ' lit' : ''),
+    textContent: text,
+    onclick: async () => {
+      const restore = clockSnapshot(workout);
+      stretchClockTap(workout, new Date().toISOString());
+      if (!(await save(box))) return restore();
+      return draw(box);
+    },
+  });
+}
+
 function goTo(box, index) {
-  // Растяжка — не упражнение: шаг к ней закрывает идущий счёт времени. Стоп
+  // Растяжка — не упражнение: шаг к ней закрывает идущий счёт упражнения,
+  // а её собственный не трогает (09.11). Стоп
   // пишется до перехода: отказ записи откатывает метки и оставляет на месте,
   // с плашкой «Не сохранено», — иначе экран показал бы остановленный счёт,
   // которого в базе нет.
   const { workout } = state;
   if (index >= workout.exercises.length && workout.exercises.some(exerciseClockOn)) {
     const restore = clockSnapshot(workout);
-    stopRunningClocks(workout, new Date().toISOString());
+    stopExerciseClocks(workout, new Date().toISOString());
     return save(box).then((ok) => (ok ? enter(box, index) : restore()));
   }
   return enter(box, index);
@@ -1022,6 +1051,46 @@ function enter(box, index) {
   // и касание значит «отдых кончился сейчас» — «дальше: B», лёг, тапнул,
   // и первый подход B получает переход до касания.
   return draw(box);
+}
+
+/**
+ * Шапка шага одной строкой: весь план · дата · день и шаг · часы · ✕. Общая
+ * у упражнения и у растяжки (09.11): на растяжке атлет держит позиции по
+ * часам сессии и по ним же видит длину тренировки.
+ */
+function topBar(box, workout, index, total, mode) {
+  const d = workout.date;
+  box.append(el('div', { className: 'wk-top' },
+    el('button', {
+      className: 'wk-overview', textContent: '‹ весь план',
+      onclick: () => { state.showOverview = true; return draw(box); },
+    }),
+    el('button', {
+      className: 'wk-date',
+      // Идут часы — значит, сегодня: слово уступает место ✕ в той же строке.
+      textContent: `${weekdayShort(d)} ${dm(d)}`
+        + (d === todayISO() && !(workoutElapsed(workout) != null && mode === 'live') ? ' · сегодня' : ''),
+      onclick: () => navigate('day', { date: d }),
+    }),
+    el('span', {
+      className: 'wk-crumbs',
+      textContent: `${weekCrumb(workout)}${workout.dayCode} · ${index + 1}/${total}`
+        + (workout.movedFrom ? ` · перенос с ${dm(workout.movedFrom)}` : '')
+        + (workout.backdated ? ' · задним числом' : '')
+        + (workout.status === 'done' ? ' · записана' : ''),
+    }),
+    // Часы тренировки — только у сегодняшней сессии: у прошлой они считали бы
+    // от первого подхода до «сейчас».
+    workoutElapsed(workout) != null && mode === 'live'
+      ? el('span', { className: 'wk-clock', textContent: fmtClock(workoutElapsed(workout)) })
+      : null,
+    // Выход одним касанием (решение атлета 06.11): открыл посмотреть — уйти,
+    // не листая к «отменить заполнение». Открытие без действий записи не
+    // заводит; начатое остаётся черновиком «Продолжить» на экране дня.
+    el('button', {
+      className: 'wk-close', type: 'button', textContent: '✕', ariaLabel: 'выйти из тренировки',
+      onclick: async () => { await leave(); navigate('day', {}); },
+    })));
 }
 
 async function draw(box) {
@@ -1092,15 +1161,14 @@ async function draw(box) {
   // ни истории, ни таймера отдыха — общий вид упражнения тут только мешал бы.
   if (index >= workout.exercises.length) {
     const step = extras[index - workout.exercises.length];
+    topBar(box, workout, index, total, mode);
     box.append(el('div', { className: 'wk-head' },
-      el('div', {
-        className: 'wk-crumbs',
-        textContent: `${weekCrumb(workout)}${workout.dayCode} · шаг ${index + 1}/${total}`,
-      }),
-      el('h2', { textContent: step.title })));
+      el('h2', {}, mode === 'live' && workout.status !== 'done'
+        ? stretchClock(box, workout, step.title) : step.title)));
     bonusBanner(box);
     await drawStretch(box);
     tailNav(box, index, total);
+    startTick(box, workout, mode);
     return;
   }
 
@@ -1147,38 +1215,7 @@ async function draw(box) {
   // Шапка одной строкой (решение атлета 05.11): весь план, дата, день, шаг —
   // поля ввода видны на первом экране. Дата стоит в ней всегда: в зале
   // открывают несколько дней подряд, и без неё непонятно, какой заполняешь.
-  const d = workout.date;
-  box.append(el('div', { className: 'wk-top' },
-    el('button', {
-      className: 'wk-overview', textContent: '‹ весь план',
-      onclick: () => { state.showOverview = true; return draw(box); },
-    }),
-    el('button', {
-      className: 'wk-date',
-      // Идут часы — значит, сегодня: слово уступает место ✕ в той же строке.
-      textContent: `${weekdayShort(d)} ${dm(d)}`
-        + (d === todayISO() && !(workoutElapsed(workout) != null && mode === 'live') ? ' · сегодня' : ''),
-      onclick: () => navigate('day', { date: d }),
-    }),
-    el('span', {
-      className: 'wk-crumbs',
-      textContent: `${weekCrumb(workout)}${workout.dayCode} · ${index + 1}/${total}`
-        + (workout.movedFrom ? ` · перенос с ${dm(workout.movedFrom)}` : '')
-        + (workout.backdated ? ' · задним числом' : '')
-        + (workout.status === 'done' ? ' · записана' : ''),
-    }),
-    // Часы тренировки — только у сегодняшней сессии: у прошлой они считали бы
-    // от первого подхода до «сейчас».
-    workoutElapsed(workout) != null && mode === 'live'
-      ? el('span', { className: 'wk-clock', textContent: fmtClock(workoutElapsed(workout)) })
-      : null,
-    // Выход одним касанием (решение атлета 06.11): открыл посмотреть — уйти,
-    // не листая к «отменить заполнение». Открытие без действий записи не
-    // заводит; начатое остаётся черновиком «Продолжить» на экране дня.
-    el('button', {
-      className: 'wk-close', type: 'button', textContent: '✕', ariaLabel: 'выйти из тренировки',
-      onclick: async () => { await leave(); navigate('day', {}); },
-    })));
+  topBar(box, workout, index, total, mode);
 
   // Имя — короткое: уточнения плана («разминка без лямок…») уходят под
   // «снаряд, видео». Под именем одна строка: план и прошлый раз. У варианта
@@ -2128,9 +2165,15 @@ async function draw(box) {
       dockMain, dockMore, dockAlt));
   }
 
-  // Часы тренировки и счётчик отдыха идут одним тиком и читают метки записи
-  // на каждом тике, а не копят секунды: свёрнутое приложение усыпляет
-  // интервалы, метки не врут.
+  startTick(box, workout, mode);
+}
+
+/**
+ * Часы тренировки и счётчик отдыха идут одним тиком и читают метки записи
+ * на каждом тике, а не копят секунды: свёрнутое приложение усыпляет
+ * интервалы, метки не врут. Тик заводят и шаг упражнения, и шаг растяжки.
+ */
+function startTick(box, workout, mode) {
   stopClock();
   if (mode === 'live' && workout.firstSetAt && workout.status !== 'done') {
     state.clock = setInterval(() => {

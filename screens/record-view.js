@@ -156,6 +156,10 @@ export function renderRecord(rec, { onOpen, onEdit } = {}) {
     }
     box.append(cap);
     box.append(exerciseTable(s.rows));
+    // Время растяжки — той же тихой серой строкой, что время упражнения (09.11).
+    if (s.stretchTime) {
+      box.append(el('div', { className: 'rec-swap rec-time', textContent: `растяжка ${s.stretchTime}` }));
+    }
     if (s.chestSignal != null) {
       box.append(facts([{ label: 'правая грудь', value: String(s.chestSignal), alert: s.chestSignal >= 2 }]));
     }

@@ -3,7 +3,7 @@ import { pickPlan, sessionsFor } from '../plan.js';
 import { isoWeek, fromISO } from '../lib/dates.js';
 import { SIGNALS, KIND_RU } from './day-logic.js';
 import { plannedSeconds } from './stretch-block.js';
-import { repsPerSide, weightPerHand, restFeelText, exerciseTimes } from './workout-logic.js';
+import { repsPerSide, weightPerHand, restFeelText, exerciseTimes, stretchTime } from './workout-logic.js';
 
 const has = (v) => v !== null && v !== undefined;
 const same = (list) => list.every((v) => v === list[0]);
@@ -271,6 +271,8 @@ export function dayRecord(iso, ctx) {
     avgRPE: w.avgRPE,
     chestSignal: w.chestSignal,
     rows: timedRows(w),
+    // Время растяжки (09.11): «9 мин» или «—»; без счёта поля нет.
+    ...((t) => (t ? { stretchTime: t } : {}))(stretchTime(w)),
   }));
 
   const mob = mobilitySession(iso, day, ctx.plans);

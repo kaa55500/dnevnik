@@ -9,7 +9,7 @@ import { todayISO, weekdayShort, isoWeek, addDays, dm, fromISO } from '../lib/da
 import { parseNum } from '../lib/format.js';
 import {
   pendingTasks, closedTasks, debts, skipKeyOf, skipScopeOf, SIGNALS, signalsFor, cleanMorning,
-  sessionStart, lastDraft,
+  sessionStart, lastDraft, rowState,
 } from './day-logic.js';
 import { makeUnplannedWorkout, KIND_TITLE } from './workout-logic.js';
 import { dayRecord } from './journal-logic.js';
@@ -24,6 +24,42 @@ export function el(tag, props = {}, ...kids) {
   Object.assign(n, props);
   for (const k of kids) if (k != null) n.append(k);
   return n;
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const ICON_LABEL = { done: 'сделано', skipped: 'не делал', pending: 'не записано' };
+
+/**
+ * Значок состояния строки «Дня» (решение атлета 09.11): мелкий серый текст
+ * «✓», «не делал», «не записано» читался одинаково. Одна геометрия 22 px:
+ * сделано — залитый круг с галочкой, «не делал» — залитый круг с ✕, ждёт —
+ * кольцо с точкой. Цвета — переменными в `style.css`, по классу состояния.
+ */
+function stateIcon(state, label = ICON_LABEL[state]) {
+  if (!state) return null;
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 22 22');
+  svg.setAttribute('width', '22');
+  svg.setAttribute('height', '22');
+  svg.setAttribute('aria-hidden', 'true');
+  const shape = (tag, attrs) => {
+    const n = document.createElementNS(SVG_NS, tag);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+    svg.append(n);
+  };
+  if (state === 'pending') {
+    shape('circle', { class: 'ic-ring', cx: '11', cy: '11', r: '9.5' });
+    shape('circle', { class: 'ic-dot', cx: '11', cy: '11', r: '3' });
+  } else {
+    shape('circle', { class: 'ic-disc', cx: '11', cy: '11', r: '11' });
+    shape('path', {
+      class: 'ic-mark',
+      d: state === 'done' ? 'M6.5 11.3l3 3 6-6.3' : 'M7.5 7.5l7 7M14.5 7.5l-7 7',
+    });
+  }
+  const icon = el('span', { className: `row-icon ${state}`, role: 'img', ariaLabel: label }, svg);
+  icon.dataset.state = state;
+  return icon;
 }
 
 export function field(label, key, obj, step = 'any') {
@@ -510,7 +546,8 @@ export async function render(box, params = {}) {
 
   // ---------- Тренировка первой (решение атлета 05.11) ----------
   // Главное действие дня — первая карточка: «Начать» или «Продолжить · подход
-  // k из M». Закрытая сессия — строкой «записана», касание открывает запись.
+  // k из M». Закрытая сессия — строкой с лаймовой галочкой (09.11; подпись
+  // для диктора — «записана»), касание открывает запись.
   for (const sess of sessions) {
     if (sess.kind === 'mobility') continue;
     const t = tasks.find((x) => x.kind === sess.kind && (x.code || '') === (sess.code || ''));
@@ -523,7 +560,7 @@ export async function render(box, params = {}) {
       onclick: () => navigate('workout', { date, kind: sess.kind, code: sess.code }),
     },
     el('span', { className: 'row-title', textContent: `${sess.code} · ${sess.title || KIND_TITLE[sess.kind]}` }),
-    el('span', { className: 'row-value', textContent: 'записана' }),
+    stateIcon('done', 'записана'),
     el('span', { className: 'chev' }))));
   }
 
@@ -569,7 +606,7 @@ export async function render(box, params = {}) {
 
   // ---------- Остальное — свёрнутыми строками ----------
   // Утро, растяжка, вечер, неделя, «Сделано», «Не закрыто» не спорят
-  // с тренировкой: строка с состоянием справа, касание раскрывает нынешнюю
+  // с тренировкой: строка со значком состояния справа (09.11), касание раскрывает нынешнюю
   // карточку на месте. Раскрытую строку называет параметр `edit` — им же
   // «Сделано» открывает правку записанного.
   const rowOf = (key, title, state, body) => {
@@ -579,7 +616,7 @@ export async function render(box, params = {}) {
       onclick: () => navigate('day', open ? { date } : { date, edit: key }),
     },
     el('span', { className: 'row-title', textContent: title }),
-    el('span', { className: 'row-value', textContent: state }),
+    stateIcon(state),
     el('span', { className: 'chev' })));
     if (open) box.append(body());
   };
@@ -587,11 +624,10 @@ export async function render(box, params = {}) {
   const rows = [...tasks.filter((t) => !t.kind), ...closed];
   const keyOf = (t) => (t.kind ? skipKeyOf(t) : t.key);
   for (const t of rows) {
-    const state = t.skipped ? 'не делал' : (t.done ? '✓' : (t.required ? 'не записано' : ''));
-    rowOf(keyOf(t), t.title, state, () => buildCard(t));
+    rowOf(keyOf(t), t.title, rowState(t), () => buildCard(t));
   }
-  if (!rec.empty) rowOf('done', 'Сделано', '', doneCard);
-  if (owed.length) rowOf('debts', `Не закрыто: ${owed.length}`, '', debtsCard);
+  if (!rec.empty) rowOf('done', 'Сделано', null, doneCard);
+  if (owed.length) rowOf('debts', `Не закрыто: ${owed.length}`, null, debtsCard);
 
   // Уехавшая сессия не исчезает с плановой даты молча: видно, что она сделана
   // и где именно. Иначе день выглядит так, будто тренировки не было вовсе.

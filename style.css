@@ -675,6 +675,10 @@ ol.wk-sets li.warm { opacity: 0.5; }
 /* Отдых закрыт касанием: цифра замерла — другим цветом, чтобы видно издалека. */
 .wk-dock .wk-rest.stopped { color: var(--ink); }
 .wk-dock .wk-rest.stopped .wk-rest-cap::after { content: '· стоп'; }
+/* Дорога к снаряду (09.11): 15 с после касания — тот же акцент на мягкой
+   подложке и подпись в полную яркость, чтобы её не спутать с отдыхом. */
+.wk-dock .wk-rest.walking { background: var(--accent-soft); border-radius: 12px; padding: 0 8px; }
+.wk-dock .wk-rest.walking .wk-rest-cap { opacity: 1; }
 .wk-dock .wk-add, .wk-dock .wk-next {
   flex: 1 1 auto;
   min-width: 0;
@@ -1921,5 +1925,16 @@ label.from-plan input[disabled] {
 }
 .day-row .row-title { flex: 1; }
 .day-row .row-value { color: var(--muted); font-size: var(--t-sm); }
+/*
+ * Значок состояния строки (09.11): сделано — лаймовый круг с чёрной
+ * галочкой, «не делал» — красный с чёрным ✕, ждёт — жёлтое кольцо с точкой.
+ */
+.row-icon { display: inline-flex; flex: 0 0 22px; width: 22px; height: 22px; }
+.row-icon svg { display: block; width: 22px; height: 22px; }
+.row-icon .ic-mark { fill: none; stroke: var(--bg); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.row-icon.done .ic-disc { fill: var(--accent); }
+.row-icon.skipped .ic-disc { fill: var(--bad); }
+.row-icon.pending .ic-ring { fill: none; stroke: var(--warn); stroke-width: 2; }
+.row-icon.pending .ic-dot { fill: var(--warn); }
 .day-row.open { color: var(--accent); }
 .session-done .group-row { width: 100%; }
